@@ -206,7 +206,7 @@ extra_tags:
 opportunity it was called to address>
 
 ## Attendees & Roles
-<List each identified participant and their role or affiliation if determinable
+<List each identified meeting participant and their role or affiliation if determinable
 from the transcript>
 
 ## Key Discussion Points
