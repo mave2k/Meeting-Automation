@@ -115,14 +115,16 @@ Use this exact structure:
 ---
 title: "{TITLE}"
 type: meeting
-date: {DATE}
+date: {DATE} <keep the date in form yyyy-mm-dd so that Obsidian interprets it correctly as a date field>
 participants:
-
-project: ""
+  - <full name of each speaker found in the transcript, one per line>
+project: "<one of: {PROJECT_NAMES} — or Unknown if none match>"
 summary: "<1-2 sentence summary of the core topic and key outcome>"
 extra_tags:
-- <2-4 lowercase tags derived from transcript content only, no project or standard tags>
+  - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
 ---
+
+# <Concise title: YYYY-MM-DD + short description, include key participant names>
 
 ## TL;DR
 <2-3 sentences on what was discussed and decided>
@@ -131,13 +133,16 @@ extra_tags:
 <1 short paragraph: why this meeting happened and what problem it addressed>
 
 ## Key Discussion Points
+- <one bullet per major topic, one to two lines each>
 
 ## Decisions
+- <explicit decisions made — if none, write "None recorded">
 
 ## Action Items
-- [ ] —
+- [ ] <action item> — <owner if mentioned>
 
 ## Open Questions
+- <unresolved questions or follow-ups — omit this entire section if none>
 
 ---
 *Transcribed via MacWhisper · Auto-formatted with {AI_NAME}*
@@ -182,14 +187,16 @@ Use this exact structure:
 ---
 title: "{TITLE}"
 type: meeting
-date: {DATE}
+date: {DATE} <keep the date in form yyyy-mm-dd so that Obsidian interprets it correctly as a date field>
 participants:
-
-project: ""
-summary: "<2-3 sentence summary covering the main topics discussed and all key outcomes>"
+  - <full name of each speaker found in the transcript, one per line>
+project: "<one of: {PROJECT_NAMES} — or Unknown if none match>"
+summary: "<1-2 sentence summary of the core topic and key outcome>"
 extra_tags:
-- <2-4 lowercase tags derived from transcript content only, no project or standard tags>
+  - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
 ---
+
+# <Concise title: YYYY-MM-DD + short description, include key participant names>
 
 ## Summary
 <3-5 sentences covering what was discussed, decisions reached, and next steps>
@@ -210,7 +217,7 @@ Use sub-headings (###) if the meeting covered clearly separate topics.>
 <Each decision on its own bullet, with decision-owner and any conditions>
 
 ## Action Items
-- [ ] —
+- [ ] <action item> — <owner if mentioned>
 
 ## Open Questions
 <Each open question on its own bullet, with the name of who raised it>
