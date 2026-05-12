@@ -14,7 +14,7 @@ FLAVOR DETECTION
                     e.g.  2026-05-12 Client Call.mom.json
 
 Dependencies:
-pip install google-generativeai anthropic openai requests
+pip install google-genai anthropic openai requests
 ──────────────────────────────────────────────────────
 """
 
@@ -383,13 +383,17 @@ def build_messages(parsed: dict, mom: bool = False) -> tuple[str, str]:
 def call_ai(system_prompt: str, user_message: str) -> str:
     """Dispatch to the configured AI provider."""
     if AI_PROVIDER == "gemini":
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel(
-            model_name=GEMINI_MODEL,
-            system_instruction=system_prompt,
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=user_message,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt
+            )
         )
-        return model.generate_content(user_message).text.strip()
+        return response.text.strip()
 
     elif AI_PROVIDER == "claude":
         import anthropic
