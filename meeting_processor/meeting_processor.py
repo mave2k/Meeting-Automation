@@ -7,6 +7,12 @@ Reads a MacWhisper JSON export, sends the transcript to
 Google Gemini, and writes the formatted note to Obsidian
 via the Local REST API plugin.
 
+FLAVOR DETECTION
+  Standard note  →  any filename ending in .json
+                    e.g.  2026-05-12 Client Call.json
+  Minutes of Meeting → filename contains .mom before .json
+                    e.g.  2026-05-12 Client Call.mom.json
+
 Dependencies:
 pip install google-generativeai anthropic openai requests
 ──────────────────────────────────────────────────────
@@ -21,8 +27,6 @@ from datetime import datetime
 from pathlib import Path
 
 # ── Script location — all relative paths anchor here ──
-# __file__ is the absolute path to this script, regardless
-# of where it was called from.
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # ══════════════════════════════════════════════════════
@@ -30,45 +34,44 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 # ══════════════════════════════════════════════════════
 
 # ── AI Provider ───────────────────────────────────────
-AI_PROVIDER = "gemini"   # options: "gemini" | "claude" | "openai"
+AI_PROVIDER = "gemini"  # options: "gemini" | "claude" | "openai"
 
-GEMINI_API_KEY    = "AQ.Ab8RN6IgCtXZmu6rnDNqfhraNQJGJCCghg6DLmxRkY8FhiyPOw"
-GEMINI_MODEL      = "gemini-2.5-flash"
+GEMINI_API_KEY = "AQ.Ab8RN6IgCtXZmu6rnDNqfhraNQJGJCCghg6DLmxRkY8FhiyPOw"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 ANTHROPIC_API_KEY = "YOUR_ANTHROPIC_API_KEY"
-ANTHROPIC_MODEL   = "claude-opus-4-5"
+ANTHROPIC_MODEL = "claude-opus-4-5"
 
-OPENAI_API_KEY    = "YOUR_OPENAI_API_KEY"
-OPENAI_MODEL      = "gpt-4o"
+OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"
+OPENAI_MODEL = "gpt-4o"
 
 # ── Obsidian Local REST API ───────────────────────────
 # Install plugin: https://github.com/coddingtonbear/obsidian-local-rest-api
 # Find your API key in Obsidian → Settings → Local REST API
-OBSIDIAN_HOST     = "https://127.0.0.1:27124"   # default; uses self-signed cert
-OBSIDIAN_API_KEY  = "56aa5311d9ac2ab908c278177c8886478ed4d798cd3920e5696c51758794ea6f"
-OBSIDIAN_FOLDER   = "20 Business/Meetings"       # folder path inside your vault
+OBSIDIAN_HOST = "https://127.0.0.1:27124"  # default; uses self-signed cert
+OBSIDIAN_API_KEY = "56aa5311d9ac2ab908c278177c8886478ed4d798cd3920e5696c51758794ea6f"
+OBSIDIAN_FOLDER = "20 Business/Meetings"  # folder path inside your vault
 
 # ── Projects ──────────────────────────────────────────
-# Key:      the name the AI will use to identify the project
-#           (must match how the project is likely mentioned in transcripts)
+# Key: the name the AI will use to identify the project
 # wikilink: exact Obsidian note name to link to in [[...]]
-# tags:     fixed tags always added when this project is matched
+# tags: fixed tags always added when this project is matched
 PROJECTS = {
     "Halvorsen": {
         "wikilink": "Halvorsen MOC",
-        "tags":     ["halvorsen"],
+        "tags": ["halvorsen"],
     },
     "Atlas": {
         "wikilink": "Halvorsen MOC",
-        "tags":     ["halvorsen", "atlas"],
+        "tags": ["halvorsen", "atlas"],
     },
     "Blackwyse": {
         "wikilink": "Blackwyse",
-        "tags":     ["blackwyse"],
+        "tags": ["blackwyse"],
     },
     "Internal": {
         "wikilink": "Internal",
-        "tags":     ["internal"],
+        "tags": ["internal"],
     },
 }
 
@@ -76,53 +79,50 @@ PROJECTS = {
 DEFAULT_TAGS = ["meeting", "transcript"]
 
 # ── Paths (all relative to this script's location) ────
-# logs/ and processed_files.txt live next to the script.
-# No absolute paths — move the whole folder and it still works.
-LOG_DIR       = SCRIPT_DIR / "logs"
-LOG_FILE      = LOG_DIR / "meeting_processor.log"
+LOG_DIR = SCRIPT_DIR / "logs"
+LOG_FILE = LOG_DIR / "meeting_processor.log"
 PROCESSED_LOG = LOG_DIR / "meeting_processor_processed.txt"
 
 # NOTE: WATCH_FOLDER is only needed for launchd Mode B (no-argument scan).
-# When using Automator (Mode A), the file path is passed as an argument
-# and this value is never used. Remove or adjust if switching to launchd.
-WATCH_FOLDER  = SCRIPT_DIR.parent / "MacWhisper-Exports"
+WATCH_FOLDER = SCRIPT_DIR.parent / "MacWhisper-Exports"
 
 # ══════════════════════════════════════════════════════
-# SYSTEM PROMPT
+# SYSTEM PROMPTS
 # ══════════════════════════════════════════════════════
-# {DATE}          → injected by Python from the JSON metadata
-# {TITLE}         → left as literal placeholder; Python replaces
-#                   it after extracting the H1 from the response
-# {PROJECT_NAMES} → injected by Python from the PROJECTS config keys
-# {AI_NAME}       → injected by Python based on active AI provider
+# Placeholders injected by Python at runtime:
+#   {DATE}          → meeting date from JSON metadata
+#   {TITLE}         → literal placeholder; replaced after H1 extraction
+#   {PROJECT_NAMES} → keys from PROJECTS config
+#   {AI_NAME}       → active AI provider + model name
 
-SYSTEM_PROMPT = """\
-You are a precise meeting note formatter for an Obsidian knowledge vault.
+# ── Standard flavor ───────────────────────────────────
+# Concise personal reference note; distilled bullets; brevity over completeness.
+SYSTEM_PROMPT = """You are a precise meeting note formatter for an Obsidian knowledge vault.
 Given a raw meeting transcript, produce ONLY a valid Obsidian markdown note —
 no preamble, no explanation, no code fences around the output.
 
-Create the note in the language the meeting was mainly conducted in. 
+Create the note in the language the meeting was mainly conducted in.
 
 Important: keep the string {TITLE} literally in the frontmatter title field.
 It will be replaced programmatically. Do NOT substitute it yourself.
 
-Also, there might be some microphone feedback, meaning that spoken parts are exactly repeated by myself in the transcript. Please account for that possibility when attributing meaning to the different persons in the meeting.
+Also, there might be some microphone feedback, meaning that spoken parts are
+exactly repeated by myself in the transcript. Please account for that
+possibility when attributing meaning to the different persons in the meeting.
 
 Use this exact structure:
 
 ---
 title: "{TITLE}"
 type: meeting
-date: {DATE} <keep the date in form yyyy-mm-dd so that Obsidian interprets it correctly as a date field>
+date: {DATE}
 participants:
-  - <full name of each speaker found in the transcript, one per line>
-project: "<one of: {PROJECT_NAMES} — or Unknown if none match>"
+
+project: ""
 summary: "<1-2 sentence summary of the core topic and key outcome>"
 extra_tags:
-  - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
+- <2-4 lowercase tags derived from transcript content only, no project or standard tags>
 ---
-
-# <Concise title: YYYY-MM-DD + short description, include key participant names>
 
 ## TL;DR
 <2-3 sentences on what was discussed and decided>
@@ -131,19 +131,92 @@ extra_tags:
 <1 short paragraph: why this meeting happened and what problem it addressed>
 
 ## Key Discussion Points
-- <one bullet per major topic, one to two lines each>
 
 ## Decisions
-- <explicit decisions made — if none, write "None recorded">
 
 ## Action Items
-- [ ] <action item> — <owner if mentioned>
+- [ ] —
 
 ## Open Questions
-- <unresolved questions or follow-ups — omit this entire section if none>
 
 ---
 *Transcribed via MacWhisper · Auto-formatted with {AI_NAME}*
+"""
+
+# ── Minutes of Meeting (MoM) flavor ───────────────────
+# Comprehensive, attribution-focused, suitable for external distribution.
+# Triggered by naming the export file with .mom.json (e.g. meeting.mom.json).
+SYSTEM_PROMPT_MOM = """You are a professional meeting minutes formatter producing formal Minutes of
+Meeting (MoM) suitable for external distribution to all participants.
+
+Given a raw meeting transcript, produce ONLY a valid Obsidian markdown note —
+no preamble, no explanation, no code fences around the output.
+
+Create the note in the language the meeting was mainly conducted in.
+
+Important: keep the string {TITLE} literally in the frontmatter title field.
+It will be replaced programmatically. Do NOT substitute it yourself.
+
+There might be some microphone feedback in the transcript, meaning spoken parts
+may be exactly repeated. Account for this — do not attribute repeated passages
+as separate contributions from different speakers.
+
+CONTENT RULES — follow these strictly:
+- Completeness over brevity. Do NOT condense or omit any significant point,
+  statement, or exchange. If something was said and matters, it must appear.
+- Attribution is mandatory wherever the transcript identifies a speaker.
+  Use the format "Speaker Name: …" or "According to [Name], …" consistently.
+- Under Key Discussion Points, use as many bullets as the content requires.
+  Group related points under sub-headings if the meeting covered multiple topics.
+- Decisions must state who made or confirmed the decision, and any conditions
+  or dependencies mentioned.
+- Action Items must include the responsible person's name and any deadline or
+  timeframe explicitly stated in the transcript.
+- Open Questions must list every unresolved point, with the name of the person
+  who raised it if identifiable.
+- Language must be neutral, precise, and professional — suitable for sending
+  directly to all meeting participants.
+
+Use this exact structure:
+
+---
+title: "{TITLE}"
+type: meeting
+date: {DATE}
+participants:
+
+project: ""
+summary: "<2-3 sentence summary covering the main topics discussed and all key outcomes>"
+extra_tags:
+- <2-4 lowercase tags derived from transcript content only, no project or standard tags>
+---
+
+## Summary
+<3-5 sentences covering what was discussed, decisions reached, and next steps>
+
+## Context
+<1-2 paragraphs: background, purpose of the meeting, and the problem or
+opportunity it was called to address>
+
+## Attendees & Roles
+<List each identified participant and their role or affiliation if determinable
+from the transcript>
+
+## Key Discussion Points
+<Comprehensive, attributed bullets — do not omit anything material.
+Use sub-headings (###) if the meeting covered clearly separate topics.>
+
+## Decisions
+<Each decision on its own bullet, with decision-owner and any conditions>
+
+## Action Items
+- [ ] —
+
+## Open Questions
+<Each open question on its own bullet, with the name of who raised it>
+
+---
+*Minutes of Meeting · Transcribed via MacWhisper · Auto-formatted with {AI_NAME}*
 """
 
 # ══════════════════════════════════════════════════════
@@ -159,11 +232,23 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
+
 log = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════
+
+def is_mom_flavor(filepath: Path) -> bool:
+    """Return True if the filename signals Minutes-of-Meeting flavor.
+
+    Convention: any filename ending in .mom.json triggers MoM mode.
+    Examples:
+        2026-05-12 Client Call.mom.json  → MoM
+        2026-05-12 Client Call.json      → standard
+    """
+    return filepath.name.lower().endswith(".mom.json")
+
 
 def get_processed() -> set:
     """Return set of already-processed file paths."""
@@ -184,13 +269,13 @@ def parse_macwhisper_json(json_file: Path) -> dict:
     MacWhisper produces two different JSON shapes depending on export style:
 
     Shape A — Wrapped dict (full export with metadata):
-      {
-        "createdAt": <timestamp>,
-        "segments": [ { "speaker": "...", "text": "...", "start": 0.0 }, ... ]
-      }
+        {
+            "createdAt": <timestamp>,
+            "segments": [ { "speaker": "...", "text": "...", "start": 0.0 }, ... ]
+        }
 
     Shape B — Bare array (Segments/People export, no metadata):
-      [ { "speaker": "...", "text": "..." }, ... ]
+        [ { "speaker": "...", "text": "..." }, ... ]
 
     This function handles both.
     """
@@ -199,11 +284,9 @@ def parse_macwhisper_json(json_file: Path) -> dict:
 
     # ── Normalise to a common structure ───────────────
     if isinstance(data, list):
-        # Shape B: bare array — segments are the root element, no metadata
         segments = data
         raw_date = None
     else:
-        # Shape A: wrapped dict with metadata
         segments = data.get("segments", [])
         raw_date = (
             data.get("createdAt")
@@ -215,18 +298,17 @@ def parse_macwhisper_json(json_file: Path) -> dict:
     # ── Date ─────────────────────────────────────────
     if raw_date:
         if isinstance(raw_date, (int, float)):
-            if raw_date > 1e10:        # milliseconds → seconds
+            if raw_date > 1e10:  # milliseconds → seconds
                 raw_date /= 1000
             dt = datetime.fromtimestamp(raw_date)
         else:
             dt = datetime.fromisoformat(str(raw_date))
     else:
-        # No metadata: fall back to file modification time
         log.warning("No date metadata in JSON — using file modification time.")
         dt = datetime.fromtimestamp(json_file.stat().st_mtime)
 
     date_display = dt.strftime("%d.%m.%Y")
-    date_prefix  = dt.strftime("%Y-%m-%d")
+    date_prefix = dt.strftime("%Y-%m-%d")
 
     # ── Transcript ────────────────────────────────────
     lines = []
@@ -241,20 +323,29 @@ def parse_macwhisper_json(json_file: Path) -> dict:
         if text:
             lines.append(f"{speaker}: {text}")
 
-    transcript_text = "\n".join(lines) if lines else (data.get("transcript", "") if isinstance(data, dict) else "")
+    transcript_text = (
+        "\n".join(lines)
+        if lines
+        else (data.get("transcript", "") if isinstance(data, dict) else "")
+    )
 
     if not transcript_text:
         raise ValueError("No transcript content found in JSON file.")
 
     return {
         "date_display": date_display,
-        "date_prefix":  date_prefix,
-        "transcript":   transcript_text,
+        "date_prefix": date_prefix,
+        "transcript": transcript_text,
     }
 
 
-def build_messages(parsed: dict) -> tuple[str, str]:
-    """Return (system_prompt, user_message) with all placeholders injected."""
+def build_messages(parsed: dict, mom: bool = False) -> tuple[str, str]:
+    """Return (system_prompt, user_message) with all placeholders injected.
+
+    Args:
+        parsed: Output of parse_macwhisper_json().
+        mom:    If True, use the MoM flavor prompt; otherwise standard.
+    """
     if AI_PROVIDER == "gemini":
         ai_name = f"Gemini ({GEMINI_MODEL})"
     elif AI_PROVIDER == "claude":
@@ -266,15 +357,19 @@ def build_messages(parsed: dict) -> tuple[str, str]:
 
     project_names = ", ".join(PROJECTS.keys()) + ", Unknown"
 
-    system = (SYSTEM_PROMPT
-              .replace("{DATE}",          parsed["date_display"])
-              .replace("{AI_NAME}",       ai_name)
-              .replace("{PROJECT_NAMES}", project_names))
+    prompt_template = SYSTEM_PROMPT_MOM if mom else SYSTEM_PROMPT
+    system = (
+        prompt_template
+        .replace("{DATE}", parsed["date_display"])
+        .replace("{AI_NAME}", ai_name)
+        .replace("{PROJECT_NAMES}", project_names)
+    )
 
     user = (
         f"Meeting date: {parsed['date_display']}\n\n"
         f"Transcript:\n{parsed['transcript']}"
     )
+
     return system, user
 
 
@@ -307,7 +402,7 @@ def call_ai(system_prompt: str, user_message: str) -> str:
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_message},
+                {"role": "user", "content": user_message},
             ],
         )
         return response.choices[0].message.content.strip()
@@ -329,7 +424,7 @@ def inject_title(markdown: str, title: str) -> str:
     """Replace the {TITLE} placeholder; regex safety net as backup."""
     result = markdown.replace("{TITLE}", title)
     result = re.sub(
-        r'^(title:\s*")[^"]*(")',
+        r'^(title:\s*")[^"]*(")'  ,
         rf'\g<1>{title}\g<2>',
         result,
         flags=re.MULTILINE,
@@ -337,34 +432,41 @@ def inject_title(markdown: str, title: str) -> str:
     return result
 
 
-def resolve_project_and_tags(markdown: str) -> str:
+def resolve_project_and_tags(markdown: str, extra_fixed_tags: list[str] | None = None) -> str:
     """
     Reads the AI-generated project name and extra_tags from the frontmatter,
     replaces them with the proper wikilink and a merged, deduplicated tag list.
 
+    Args:
+        markdown:         The AI-generated markdown string.
+        extra_fixed_tags: Additional tags to inject (e.g. ["mom"] for MoM flavor).
+
     Input frontmatter (AI-generated):
-      project: "Halvorsen"
-      extra_tags:
+        project: "Halvorsen"
+        extra_tags:
         - error-handling
         - support-process
 
     Output frontmatter (Python-resolved):
-      project: "[[Halvorsen MOC]]"
-      tags:
-        - halvorsen          ← from PROJECTS config
-        - meeting        ← from DEFAULT_TAGS
-        - error-handling ← from AI extra_tags
+        project: "[[Halvorsen MOC]]"
+        tags:
+        - halvorsen           ← from PROJECTS config
+        - meeting         ← from DEFAULT_TAGS
+        - mom             ← from extra_fixed_tags (MoM flavor only)
+        - error-handling  ← from AI extra_tags
         - support-process
     """
+    extra_fixed_tags = extra_fixed_tags or []
+
     # ── Extract project name ──────────────────────────
     project_match = re.search(r'^project:\s*"?([^"\n]+)"?', markdown, re.MULTILINE)
-    project_name  = project_match.group(1).strip() if project_match else "Unknown"
+    project_name = project_match.group(1).strip() if project_match else "Unknown"
 
     # ── Look up wikilink and fixed tags ───────────────
     project_data = PROJECTS.get(project_name, {})
-    wikilink     = project_data.get("wikilink", "")
+    wikilink = project_data.get("wikilink", "")
     project_tags = project_data.get("tags", [])
-    log.info(f"   Project resolved: '{project_name}' → wikilink: '{wikilink}'")
+    log.info(f"  Project resolved: '{project_name}' → wikilink: '{wikilink}'")
 
     # ── Extract AI-generated extra_tags ───────────────
     extra_tags_match = re.search(
@@ -377,15 +479,15 @@ def resolve_project_and_tags(markdown: str) -> str:
         extra_tags = re.findall(r'-\s+(\S+)', extra_tags_match.group(1))
 
     # ── Merge all tags (deduplicated, order preserved) ─
-    seen       = set()
-    merged     = []
-    for tag in project_tags + DEFAULT_TAGS + extra_tags:
+    seen = set()
+    merged = []
+    for tag in project_tags + DEFAULT_TAGS + extra_fixed_tags + extra_tags:
         if tag not in seen:
             merged.append(tag)
             seen.add(tag)
 
     tags_yaml = "\n".join(f"  - {t}" for t in merged)
-    log.info(f"   Tags merged: {merged}")
+    log.info(f"  Tags merged: {merged}")
 
     # ── Replace project: field ─────────────────────────
     wikilink_value = f'"[[{wikilink}]]"' if wikilink else '""'
@@ -418,13 +520,13 @@ def write_to_obsidian(markdown: str, filename: str) -> None:
     url = f"{OBSIDIAN_HOST}/vault/{OBSIDIAN_FOLDER}/{filename}"
     headers = {
         "Authorization": f"Bearer {OBSIDIAN_API_KEY}",
-        "Content-Type":  "text/markdown; charset=utf-8",
+        "Content-Type": "text/markdown; charset=utf-8",
     }
     resp = requests.put(
         url,
         data=markdown.encode("utf-8"),
         headers=headers,
-        verify=False,   # self-signed cert on localhost — safe here
+        verify=False,  # self-signed cert on localhost — safe here
         timeout=15,
     )
     resp.raise_for_status()
@@ -436,23 +538,31 @@ def write_to_obsidian(markdown: str, filename: str) -> None:
 # ══════════════════════════════════════════════════════
 
 def process_meeting(json_file: Path) -> None:
-    log.info(f"── Processing: {json_file.name}")
+    mom = is_mom_flavor(json_file)
+    flavor_label = "MoM" if mom else "standard"
+    log.info(f"── Processing ({flavor_label}): {json_file.name}")
 
     parsed = parse_macwhisper_json(json_file)
-    log.info(f"   Date: {parsed['date_display']} | "
-             f"Transcript length: {len(parsed['transcript'])} chars")
+    log.info(
+        f"  Date: {parsed['date_display']} | "
+        f"Transcript length: {len(parsed['transcript'])} chars"
+    )
 
-    system_prompt, user_message = build_messages(parsed)
+    system_prompt, user_message = build_messages(parsed, mom=mom)
 
-    log.info(f"   Sending to {AI_PROVIDER}...")
+    log.info(f"  Sending to {AI_PROVIDER} [{flavor_label} prompt]...")
     markdown = call_ai(system_prompt, user_message)
-    log.info(f"   Response received ({len(markdown)} chars)")
+    log.info(f"  Response received ({len(markdown)} chars)")
 
-    title    = extract_title_from_h1(markdown)
-    log.info(f"   Extracted title: {title}")
+    title = extract_title_from_h1(markdown)
+    log.info(f"  Extracted title: {title}")
 
     markdown = inject_title(markdown, title)
-    markdown = resolve_project_and_tags(markdown)
+
+    # Pass "mom" as an extra fixed tag when using the MoM flavor
+    extra_fixed_tags = ["mom"] if mom else []
+    markdown = resolve_project_and_tags(markdown, extra_fixed_tags=extra_fixed_tags)
+
     filename = f"{sanitize_filename(title)}.md"
 
     write_to_obsidian(markdown, filename)
@@ -487,6 +597,7 @@ def main() -> None:
         f for f in sorted(WATCH_FOLDER.glob("*.json"))
         if str(f) not in processed
     ]
+
     if not new_files:
         log.info("No new files to process.")
         return
