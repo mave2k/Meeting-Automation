@@ -1,0 +1,19 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+
+# Large or unnecessary files
+meeting_processor_daniel.zip

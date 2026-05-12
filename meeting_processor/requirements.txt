@@ -1,0 +1,10 @@
+# Meeting Processor — Python dependencies
+# Install all with: pip install -r requirements.txt
+
+# AI Providers (install only what you use)
+google-generativeai>=0.8.0   # Gemini
+anthropic>=0.40.0             # Claude
+openai>=1.50.0                # OpenAI / GPT
+
+# Obsidian REST API
+requests>=2.32.0
