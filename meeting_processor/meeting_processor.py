@@ -69,6 +69,10 @@ PROJECTS = {
         "wikilink": "Blackwyse",
         "tags": ["blackwyse"],
     },
+    "Medivia": {
+        "wikilink": "Medivia MOC",
+        "tags": ["medivia", "vantix"],
+    },
     "Internal": {
         "wikilink": "Internal",
         "tags": ["internal"],
