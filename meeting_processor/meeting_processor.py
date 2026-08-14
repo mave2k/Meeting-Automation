@@ -50,7 +50,7 @@ OPENAI_MODEL = "gpt-4o"
 # Find your API key in Obsidian → Settings → Local REST API
 OBSIDIAN_HOST = "https://127.0.0.1:27124"  # default; uses self-signed cert
 OBSIDIAN_API_KEY = "56aa5311d9ac2ab908c278177c8886478ed4d798cd3920e5696c51758794ea6f"
-OBSIDIAN_FOLDER = "20 Business/Meetings"  # folder path inside your vault
+OBSIDIAN_FOLDER = "+/Meetings"  # folder path inside your vault
 
 # ── Projects ──────────────────────────────────────────
 # Key: the name the AI will use to identify the project
@@ -71,7 +71,15 @@ PROJECTS = {
     },
     "Medivia": {
         "wikilink": "Medivia MOC",
-        "tags": ["medivia", "vantix"],
+        "tags": ["medivia", "vantix", "clarion"],
+    },
+    "Clarion": {
+        "wikilink": "Medivia MOC",
+        "tags": ["medivia", "vantix", "clarion"],
+    },
+    "Vantix": {
+        "wikilink": "Medivia MOC",
+        "tags": ["medivia", "vantix", "clarion"],
     },
     "Internal": {
         "wikilink": "Internal",
@@ -105,8 +113,6 @@ SYSTEM_PROMPT = """You are a precise meeting note formatter for an Obsidian know
 Given a raw meeting transcript, produce ONLY a valid Obsidian markdown note —
 no preamble, no explanation, no code fences around the output.
 
-Create the note in the language the meeting was mainly conducted in.
-
 Important: keep the string {TITLE} literally in the frontmatter title field.
 It will be replaced programmatically. Do NOT substitute it yourself.
 
@@ -114,8 +120,9 @@ Also, there might be some microphone feedback, meaning that spoken parts are
 exactly repeated by myself in the transcript. Please account for that
 possibility when attributing meaning to the different persons in the meeting.
 
-Use this exact structure:
+For the meeting note, use the language the meeting was conducted in: If the conversation was mainly in German, create the note in German. If the conversation was mainly in English, create the note in English.
 
+Use this exact structure:
 ---
 title: "{TITLE}"
 type: meeting
@@ -127,7 +134,6 @@ summary: "<1-2 sentence summary of the core topic and key outcome>"
 extra_tags:
   - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
 ---
-
 # <Concise title: YYYY-MM-DD + short description, include key participant names>
 
 ## TL;DR
@@ -186,6 +192,8 @@ CONTENT RULES — follow these strictly:
 - Language must be neutral, precise, and professional — suitable for sending
   directly to all meeting participants.
 
+Create the note content in English, if the main language of the meeting was English. If the raw transcript is mostly German, create the meeting summary in German, too.
+
 Use this exact structure:
 
 ---
@@ -199,7 +207,6 @@ summary: "<1-2 sentence summary of the core topic and key outcome>"
 extra_tags:
   - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
 ---
-
 # <Concise title: YYYY-MM-DD + short description, include key participant names>
 
 ## Summary
