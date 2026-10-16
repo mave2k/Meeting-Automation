@@ -212,3 +212,9 @@ Meeting Automation/
         ├── meeting_processor.log
         └── meeting_processor_processed.txt
 ```
+
+---
+
+## Developing new features
+
+New features are planned in `docs/plans/` before they are implemented, using Claude Code (`/plan-feature`, then `/implement-step`). See [docs/plans/README.md](../docs/plans/README.md) for the workflow.

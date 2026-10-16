@@ -8,6 +8,17 @@ A single-script macOS automation: MacWhisper JSON transcript export → LLM (Gem
 
 `Pauls Whisper Script.py` at the repo root is an unrelated reference script (reads `.whisper` ZIP files, calls the Anthropic API via raw `urllib`, creates a Bear note). It is not part of the pipeline.
 
+## Workflow: plan first, then implement
+
+Feature work is split into two separate sessions. The plan file is the contract between them — not the chat history.
+
+- **Plans live in `docs/plans/`**, one file per feature, named `NN-<feature>.md` (e.g. `01-speaker-mapping.md`), created from [docs/plans/_template.md](docs/plans/_template.md).
+- **Planning sessions** (Plan Mode, or `/plan-feature`): read and analyze code, ask questions, challenge the approach. Do not modify code — the only files you may write are in `docs/plans/`.
+- **Implementation sessions** (fresh context, or `/implement-step`): read the plan file first. Implement **one step at a time**, then tick its checkbox in the plan and stop so the user can test and commit. Do not continue to the next step unprompted.
+- **When reality differs from the plan** (a step is wrong, scope grows, an open question blocks): stop and propose a plan update instead of improvising in the code. Continue only after the plan file is updated.
+- Respect the plan's "Out of scope" section.
+- Ask before adding new dependencies to `requirements.txt`.
+
 ## Commands
 
 There is no build, lint, or test suite.
