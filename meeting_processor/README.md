@@ -38,9 +38,9 @@ mkdir -p ~/Projects/Meeting\ Automation/meeting_processor/logs
 mkdir -p ~/Projects/Meeting\ Automation/MacWhisper-Exports
 ```
 
-Place `meeting_processor.py` in:
+The code lives in:
 ```
-~/Projects/Meeting Automation/meeting_processor/meeting_processor.py
+~/Projects/Meeting Automation/meeting_processor/src/meeting_processor/processor.py
 ```
 
 ### 2. Create a Python virtual environment
@@ -50,11 +50,20 @@ cd ~/Projects/Meeting\ Automation/meeting_processor
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .          # installs the `meeting-processor` command (editable)
 ```
+
+**What these commands do**
+
+- **`.venv`** is a private toolbox for this project: its own Python plus its own libraries, isolated from the rest of your Mac. This is why Automator calls `.venv/bin/meeting-processor` instead of a system Python.
+- **`pip install -r requirements.txt`** installs the libraries the script depends on (Gemini/Claude/OpenAI SDKs, `requests`) into the toolbox.
+- **`pip install -e .`** registers this project's own code in the toolbox. It reads `pyproject.toml`, which tells pip the project name, where the code is (`src/`), where to take the dependency list from (`requirements.txt`) and which command to create (`meeting-processor`, which runs `main()` in `processor.py`). "Editable" (`-e`) means the toolbox points at your source files instead of copying them, so edits to `processor.py` take effect immediately.
+
+You only need to rerun the install commands if you recreate the `.venv`, add a library to `requirements.txt` (rerun the first), or change the entry point in `pyproject.toml` (rerun the second).
 
 ### 3. Configure the script
 
-Open `meeting_processor.py` and edit the configuration section at the top.
+Open `src/meeting_processor/processor.py` and edit the configuration section at the top.
 
 **AI provider:**
 ```python
@@ -97,17 +106,15 @@ The AI picks the project name from your `PROJECTS` keys based on the transcript 
 
 ```zsh
 #!/bin/zsh
-SCRIPT="$HOME/Projects/Meeting Automation/meeting_processor/meeting_processor.py"
-VENV="$HOME/Projects/Meeting Automation/meeting_processor/.venv/bin/activate"
+CMD="$HOME/Projects/Meeting Automation/meeting_processor/.venv/bin/meeting-processor"
 LOG="$HOME/Projects/Meeting Automation/meeting_processor/logs/automator.log"
 
 mkdir -p "$(dirname "$LOG")"
-source "$VENV"
 
 for f in "$@"; do
   if [[ "$f" == *.json ]]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Triggered: $f" >> "$LOG"
-    python3 "$SCRIPT" "$f" >> "$LOG" 2>&1
+    "$CMD" "$f" >> "$LOG" 2>&1
   fi
 done
 ```
@@ -123,7 +130,7 @@ Before relying on the Automator trigger, run the script directly on a real expor
 ```zsh
 cd ~/Projects/Meeting\ Automation/meeting_processor
 source .venv/bin/activate
-python3 meeting_processor.py ~/Projects/Meeting\ Automation/MacWhisper-Exports/your-export.json
+meeting-processor ~/Projects/Meeting\ Automation/MacWhisper-Exports/your-export.json
 ```
 
 A new note should appear in your Obsidian vault within a few seconds. Check `logs/meeting_processor.log` for detailed output.
@@ -203,7 +210,10 @@ Make sure the corresponding API key is filled in and the SDK is installed (`pip 
 Meeting Automation/
 ├── MacWhisper-Exports/        ← drop MacWhisper JSON exports here
 └── meeting_processor/
-    ├── meeting_processor.py   ← main script
+    ├── pyproject.toml         ← packaging + `meeting-processor` entry point
+    ├── src/meeting_processor/
+    │   ├── processor.py       ← main code (config, prompts, pipeline, main())
+    │   └── __main__.py        ← enables `python -m meeting_processor`
     ├── requirements.txt       ← Python dependencies
     ├── README.md              ← this file
     ├── .venv/                 ← Python virtual environment

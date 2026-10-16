@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meeting-processor"
+version = "0.1.0"
+description = "MacWhisper transcript -> LLM -> structured Obsidian meeting note"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[project.scripts]
+meeting-processor = "meeting_processor.processor:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]

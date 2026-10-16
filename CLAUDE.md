@@ -27,19 +27,20 @@ There is no build, lint, or test suite.
 cd meeting_processor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .          # src layout: installs the `meeting-processor` command
 
 # Process a specific export (Mode A — what Automator does)
-python3 meeting_processor.py "../MacWhisper-Exports/<export>.json"
+meeting-processor "../MacWhisper-Exports/<export>.json"
 
 # Scan WATCH_FOLDER for unprocessed *.json files (Mode B — launchd style)
-python3 meeting_processor.py
+meeting-processor         # equivalent: python -m meeting_processor
 ```
 
 Running it calls a real LLM API and writes to the live Obsidian vault (Obsidian must be running). Already-processed paths are recorded in `logs/meeting_processor_processed.txt` and skipped — remove the line to re-run a file. Logs go to `logs/meeting_processor.log` and stdout.
 
-## Architecture (meeting_processor/meeting_processor.py)
+## Architecture (meeting_processor/src/meeting_processor/processor.py)
 
-All configuration is module-level constants at the top of the file (provider, API keys, models, Obsidian host/folder, `PROJECTS`, `DEFAULT_TAGS`) — there is no config file or env-var loading. Paths are anchored to `SCRIPT_DIR`.
+All configuration is module-level constants at the top of the file (provider, API keys, models, Obsidian host/folder, `PROJECTS`, `DEFAULT_TAGS`) — there is no config file or env-var loading. Paths are anchored to `PROJECT_DIR` (the `meeting_processor/` folder, two levels above `processor.py`), which is why an editable install (`pip install -e .`) is required. Logging is configured in `setup_logging()`, called from `main()`, not at import time. Entry points: the `meeting-processor` console script (`pyproject.toml`) and `__main__.py`.
 
 Pipeline in `process_meeting()`:
 

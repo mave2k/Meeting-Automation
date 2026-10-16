@@ -17,3 +17,8 @@ logs/
 
 # Large or unnecessary files
 meeting_processor_daniel.zip
+
+# Packaging
+*.egg-info/
+build/
+dist/

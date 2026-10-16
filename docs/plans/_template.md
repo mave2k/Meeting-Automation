@@ -20,7 +20,7 @@ Note any impact on the LLM output contract (frontmatter fields, `{TITLE}`, `proj
 - Given <input>, the output is <...>
 
 ## How to test
-Which export to run (`python3 meeting_processor.py "../MacWhisper-Exports/<export>.json"`) and what to check in the Obsidian note.
+Which export to run (`meeting-processor "../MacWhisper-Exports/<export>.json"`) and what to check in the Obsidian note.
 
 ## Open questions
 - ...

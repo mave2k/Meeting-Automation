@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-meeting_processor.py
+meeting_processor.processor
 ──────────────────────────────────────────────────────
 Triggered by Automator Folder Action or launchd WatchPaths.
 Reads a MacWhisper JSON export, sends the transcript to
@@ -26,8 +25,10 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# ── Script location — all relative paths anchor here ──
-SCRIPT_DIR = Path(__file__).resolve().parent
+# ── Project folder (meeting_processor/) — all relative paths anchor here ──
+# This file lives in <project>/src/meeting_processor/, so go up two levels.
+# Requires an editable install (pip install -e .) so __file__ points at the source tree.
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 
 # ══════════════════════════════════════════════════════
 # CONFIGURATION
@@ -90,13 +91,13 @@ PROJECTS = {
 # Tags added to every note regardless of project
 DEFAULT_TAGS = ["meeting", "transcript"]
 
-# ── Paths (all relative to this script's location) ────
-LOG_DIR = SCRIPT_DIR / "logs"
+# ── Paths (all relative to the project folder) ────
+LOG_DIR = PROJECT_DIR / "logs"
 LOG_FILE = LOG_DIR / "meeting_processor.log"
 PROCESSED_LOG = LOG_DIR / "meeting_processor_processed.txt"
 
 # NOTE: WATCH_FOLDER is only needed for launchd Mode B (no-argument scan).
-WATCH_FOLDER = SCRIPT_DIR.parent / "MacWhisper-Exports"
+WATCH_FOLDER = PROJECT_DIR.parent / "MacWhisper-Exports"
 
 # ══════════════════════════════════════════════════════
 # SYSTEM PROMPTS
@@ -241,17 +242,20 @@ Use sub-headings (###) if the meeting covered clearly separate topics.>
 # LOGGING
 # ══════════════════════════════════════════════════════
 
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
-
 log = logging.getLogger(__name__)
+
+
+def setup_logging() -> None:
+    """Configure file + stdout logging. Called from main(), not at import time."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
 
 # ══════════════════════════════════════════════════════
 # HELPERS
@@ -596,6 +600,8 @@ def process_meeting(json_file: Path) -> None:
 # ══════════════════════════════════════════════════════
 
 def main() -> None:
+    setup_logging()
+
     # ── Mode A: Automator passes file paths as arguments ──
     if len(sys.argv) > 1:
         for arg in sys.argv[1:]:
@@ -632,6 +638,3 @@ def main() -> None:
         except Exception as e:
             log.error(f"Failed [{json_file.name}]: {e}", exc_info=True)
 
-
-if __name__ == "__main__":
-    main()
