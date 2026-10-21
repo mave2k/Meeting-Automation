@@ -1,0 +1,24 @@
+# Meeting Processor — configuration
+# Copy this file to config.toml (same folder) and fill in your values.
+# config.toml is ignored by git — never commit real keys.
+# Only the selected provider needs a key and model; the others may stay placeholders.
+
+[ai]
+provider = "gemini"            # gemini | claude | openai
+
+[gemini]
+api_key = "YOUR_GEMINI_API_KEY"
+model   = "gemini-2.5-flash"
+
+[claude]
+api_key = "YOUR_ANTHROPIC_API_KEY"
+model   = "claude-opus-4-5"
+
+[openai]
+api_key = "YOUR_OPENAI_API_KEY"
+model   = "gpt-4o"
+
+[obsidian]
+host    = "https://127.0.0.1:27124"   # Local REST API plugin; self-signed cert
+api_key = "YOUR_OBSIDIAN_API_KEY"
+folder  = "+/Meetings"                # folder path inside your vault

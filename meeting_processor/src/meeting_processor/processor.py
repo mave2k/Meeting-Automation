@@ -3,8 +3,9 @@ meeting_processor.processor
 ──────────────────────────────────────────────────────
 Triggered by Automator Folder Action or launchd WatchPaths.
 Reads a MacWhisper JSON export, sends the transcript to
-Google Gemini, and writes the formatted note to Obsidian
-via the Local REST API plugin.
+the LLM configured in config.toml (Gemini, Claude or OpenAI),
+and writes the formatted note to Obsidian via the Local
+REST API plugin.
 
 FLAVOR DETECTION
   Standard note  →  any filename ending in .json
@@ -22,6 +23,8 @@ import logging
 import re
 import sys
 import time
+import tomllib
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -33,25 +36,8 @@ PROJECT_DIR = Path(__file__).resolve().parents[2]
 # ══════════════════════════════════════════════════════
 # CONFIGURATION
 # ══════════════════════════════════════════════════════
-
-# ── AI Provider ───────────────────────────────────────
-AI_PROVIDER = "gemini"  # options: "gemini" | "claude" | "openai"
-
-GEMINI_API_KEY = "AQ.Ab8RN6IgCtXZmu6rnDNqfhraNQJGJCCghg6DLmxRkY8FhiyPOw"
-GEMINI_MODEL = "gemini-2.5-flash"
-
-ANTHROPIC_API_KEY = "YOUR_ANTHROPIC_API_KEY"
-ANTHROPIC_MODEL = "claude-opus-4-5"
-
-OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"
-OPENAI_MODEL = "gpt-4o"
-
-# ── Obsidian Local REST API ───────────────────────────
-# Install plugin: https://github.com/coddingtonbear/obsidian-local-rest-api
-# Find your API key in Obsidian → Settings → Local REST API
-OBSIDIAN_HOST = "https://127.0.0.1:27124"  # default; uses self-signed cert
-OBSIDIAN_API_KEY = "56aa5311d9ac2ab908c278177c8886478ed4d798cd3920e5696c51758794ea6f"
-OBSIDIAN_FOLDER = "+/Meetings"  # folder path inside your vault
+# AI provider, models, API keys and Obsidian settings live in config.toml
+# (see config.example.toml and load_config() below).
 
 # ── Projects ──────────────────────────────────────────
 # Key: the name the AI will use to identify the project
@@ -95,6 +81,7 @@ DEFAULT_TAGS = ["meeting", "transcript"]
 LOG_DIR = PROJECT_DIR / "logs"
 LOG_FILE = LOG_DIR / "meeting_processor.log"
 PROCESSED_LOG = LOG_DIR / "meeting_processor_processed.txt"
+CONFIG_FILE = PROJECT_DIR / "config.toml"
 
 # NOTE: WATCH_FOLDER is only needed for launchd Mode B (no-argument scan).
 WATCH_FOLDER = PROJECT_DIR.parent / "MacWhisper-Exports"
@@ -258,6 +245,69 @@ def setup_logging() -> None:
     )
 
 # ══════════════════════════════════════════════════════
+# CONFIG FILE (config.toml)
+# ══════════════════════════════════════════════════════
+
+PROVIDERS = ("gemini", "claude", "openai")
+
+
+class ConfigError(Exception):
+    """Invalid or missing config.toml — message is shown to the user as-is."""
+
+
+@dataclass(frozen=True)
+class Config:
+    provider: str
+    api_key: str
+    model: str
+    obsidian_host: str
+    obsidian_api_key: str
+    obsidian_folder: str
+
+
+def _is_unset(value) -> bool:
+    """True if a config value is missing, empty, or still a YOUR_… placeholder."""
+    return not isinstance(value, str) or not value.strip() or value.strip().startswith("YOUR_")
+
+
+def load_config(path: Path = CONFIG_FILE) -> Config:
+    """Read and validate config.toml. Raises ConfigError with an actionable message."""
+    if not path.exists():
+        raise ConfigError(
+            f"{path.name} not found — copy config.example.toml to {path.name} and fill it in"
+        )
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{path.name} is not valid TOML: {e}") from None
+
+    provider = data.get("ai", {}).get("provider")
+    if provider not in PROVIDERS:
+        raise ConfigError(
+            f"{path.name}: [ai] provider = {provider!r} — must be one of {', '.join(PROVIDERS)}"
+        )
+
+    section = data.get(provider, {})
+    for field in ("api_key", "model"):
+        if _is_unset(section.get(field)):
+            raise ConfigError(f"{path.name}: [{provider}] {field} is empty or a placeholder")
+
+    obsidian = data.get("obsidian", {})
+    for field in ("host", "api_key", "folder"):
+        if _is_unset(obsidian.get(field)):
+            raise ConfigError(f"{path.name}: [obsidian] {field} is empty or a placeholder")
+
+    return Config(
+        provider=provider,
+        api_key=section["api_key"].strip(),
+        model=section["model"].strip(),
+        obsidian_host=obsidian["host"].strip().rstrip("/"),
+        obsidian_api_key=obsidian["api_key"].strip(),
+        obsidian_folder=obsidian["folder"].strip().strip("/"),
+    )
+
+# ══════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════
 
@@ -361,21 +411,16 @@ def parse_macwhisper_json(json_file: Path) -> dict:
     }
 
 
-def build_messages(parsed: dict, mom: bool = False) -> tuple[str, str]:
+def build_messages(parsed: dict, config: Config, mom: bool = False) -> tuple[str, str]:
     """Return (system_prompt, user_message) with all placeholders injected.
 
     Args:
         parsed: Output of parse_macwhisper_json().
+        config: Loaded config.toml (provider + model give the AI name).
         mom:    If True, use the MoM flavor prompt; otherwise standard.
     """
-    if AI_PROVIDER == "gemini":
-        ai_name = f"Gemini ({GEMINI_MODEL})"
-    elif AI_PROVIDER == "claude":
-        ai_name = f"Claude ({ANTHROPIC_MODEL})"
-    elif AI_PROVIDER == "openai":
-        ai_name = f"OpenAI ({OPENAI_MODEL})"
-    else:
-        ai_name = "Unknown AI"
+    provider_label = {"gemini": "Gemini", "claude": "Claude", "openai": "OpenAI"}
+    ai_name = f"{provider_label[config.provider]} ({config.model})"
 
     project_names = ", ".join(PROJECTS.keys()) + ", Unknown"
 
@@ -395,14 +440,14 @@ def build_messages(parsed: dict, mom: bool = False) -> tuple[str, str]:
     return system, user
 
 
-def call_ai(system_prompt: str, user_message: str) -> str:
+def call_ai(system_prompt: str, user_message: str, config: Config) -> str:
     """Dispatch to the configured AI provider."""
-    if AI_PROVIDER == "gemini":
+    if config.provider == "gemini":
         from google import genai
         from google.genai import types
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=config.api_key)
         response = client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=config.model,
             contents=user_message,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt
@@ -410,22 +455,22 @@ def call_ai(system_prompt: str, user_message: str) -> str:
         )
         return response.text.strip()
 
-    elif AI_PROVIDER == "claude":
+    elif config.provider == "claude":
         import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=config.api_key)
         message = client.messages.create(
-            model=ANTHROPIC_MODEL,
+            model=config.model,
             max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
         return message.content[0].text.strip()
 
-    elif AI_PROVIDER == "openai":
+    elif config.provider == "openai":
         from openai import OpenAI
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(api_key=config.api_key)
         response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=config.model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
@@ -434,7 +479,7 @@ def call_ai(system_prompt: str, user_message: str) -> str:
         return response.choices[0].message.content.strip()
 
     else:
-        raise ValueError(f"Unknown AI_PROVIDER: {AI_PROVIDER}")
+        raise ValueError(f"Unknown AI provider: {config.provider}")
 
 
 def extract_title_from_h1(markdown: str) -> str:
@@ -540,12 +585,12 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", name).strip()
 
 
-def write_to_obsidian(markdown: str, filename: str) -> None:
+def write_to_obsidian(markdown: str, filename: str, config: Config) -> None:
     """PUT the note to Obsidian via the Local REST API plugin."""
     import requests
-    url = f"{OBSIDIAN_HOST}/vault/{OBSIDIAN_FOLDER}/{filename}"
+    url = f"{config.obsidian_host}/vault/{config.obsidian_folder}/{filename}"
     headers = {
-        "Authorization": f"Bearer {OBSIDIAN_API_KEY}",
+        "Authorization": f"Bearer {config.obsidian_api_key}",
         "Content-Type": "text/markdown; charset=utf-8",
     }
     resp = requests.put(
@@ -556,14 +601,14 @@ def write_to_obsidian(markdown: str, filename: str) -> None:
         timeout=15,
     )
     resp.raise_for_status()
-    log.info(f"✓ Saved to Obsidian: {OBSIDIAN_FOLDER}/{filename}")
+    log.info(f"✓ Saved to Obsidian: {config.obsidian_folder}/{filename}")
 
 
 # ══════════════════════════════════════════════════════
 # CORE PIPELINE
 # ══════════════════════════════════════════════════════
 
-def process_meeting(json_file: Path) -> None:
+def process_meeting(json_file: Path, config: Config) -> None:
     mom = is_mom_flavor(json_file)
     flavor_label = "MoM" if mom else "standard"
     log.info(f"── Processing ({flavor_label}): {json_file.name}")
@@ -574,10 +619,10 @@ def process_meeting(json_file: Path) -> None:
         f"Transcript length: {len(parsed['transcript'])} chars"
     )
 
-    system_prompt, user_message = build_messages(parsed, mom=mom)
+    system_prompt, user_message = build_messages(parsed, config, mom=mom)
 
-    log.info(f"  Sending to {AI_PROVIDER} [{flavor_label} prompt]...")
-    markdown = call_ai(system_prompt, user_message)
+    log.info(f"  Sending to {config.provider} ({config.model}) [{flavor_label} prompt]...")
+    markdown = call_ai(system_prompt, user_message, config)
     log.info(f"  Response received ({len(markdown)} chars)")
 
     title = extract_title_from_h1(markdown)
@@ -591,7 +636,7 @@ def process_meeting(json_file: Path) -> None:
 
     filename = f"{sanitize_filename(title)}.md"
 
-    write_to_obsidian(markdown, filename)
+    write_to_obsidian(markdown, filename, config)
     log.info(f"── Done: {filename}\n")
 
 
@@ -601,6 +646,11 @@ def process_meeting(json_file: Path) -> None:
 
 def main() -> None:
     setup_logging()
+    try:
+        config = load_config()
+    except ConfigError as e:
+        log.error(f"Config error: {e}")
+        sys.exit(1)
 
     # ── Mode A: Automator passes file paths as arguments ──
     if len(sys.argv) > 1:
@@ -613,7 +663,7 @@ def main() -> None:
                 continue
             time.sleep(2)  # let MacWhisper finish writing the file
             try:
-                process_meeting(filepath)
+                process_meeting(filepath, config)
                 mark_processed(filepath)
             except Exception as e:
                 log.error(f"Failed [{filepath.name}]: {e}", exc_info=True)
@@ -633,7 +683,7 @@ def main() -> None:
     for json_file in new_files:
         time.sleep(2)
         try:
-            process_meeting(json_file)
+            process_meeting(json_file, config)
             mark_processed(json_file)
         except Exception as e:
             log.error(f"Failed [{json_file.name}]: {e}", exc_info=True)

@@ -12,18 +12,20 @@ Record → Transcribe in MacWhisper → Export JSON → Folder watcher triggers 
 - macOS (Automator is required for the folder watcher)
 - [MacWhisper](https://goodsnooze.gumroad.com/l/macwhisper) (Pro recommended for speaker recognition)
 - [Obsidian](https://obsidian.md) with the [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) plugin installed and enabled
-- Python 3 (pre-installed on macOS)
+- Python 3.11 or newer (check with `python3 --version`)
 - An API key for at least one supported AI provider (see below)
 
 ---
 
 ## Supported AI Providers
 
-| Provider | Model variable | Get an API key |
-|---|---|---|
-| Google Gemini | `GEMINI_MODEL` | [aistudio.google.com](https://aistudio.google.com) |
-| Anthropic Claude | `ANTHROPIC_MODEL` | [console.anthropic.com](https://console.anthropic.com) |
-| OpenAI GPT | `OPENAI_MODEL` | [platform.openai.com](https://platform.openai.com) |
+| Provider | `provider` value | Section in `config.toml` | Get an API key |
+|---|---|---|---|
+| Google Gemini | `gemini` | `[gemini]` | [aistudio.google.com](https://aistudio.google.com) |
+| Anthropic Claude | `claude` | `[claude]` | [console.anthropic.com](https://console.anthropic.com) |
+| OpenAI GPT | `openai` | `[openai]` | [platform.openai.com](https://platform.openai.com) |
+
+The model for each provider is set by `model` in its section.
 
 Only the SDK for your chosen provider needs to be installed.
 
@@ -63,22 +65,32 @@ You only need to rerun the install commands if you recreate the `.venv`, add a l
 
 ### 3. Configure the script
 
-Open `src/meeting_processor/processor.py` and edit the configuration section at the top.
+**API keys, provider, models, Obsidian** — these live in `config.toml`, which is ignored by git so your keys never get committed. Create it from the template:
 
-**AI provider:**
-```python
-AI_PROVIDER    = "gemini"            # "gemini" | "claude" | "openai"
-GEMINI_API_KEY = "your-key-here"
-GEMINI_MODEL   = "gemini-2.5-flash"  # change model here if needed
+```zsh
+cd ~/Projects/Meeting\ Automation/meeting_processor
+cp config.example.toml config.toml
 ```
 
-**Obsidian:**
-```python
-OBSIDIAN_API_KEY = "your-key-here"   # Obsidian → Settings → Local REST API
-OBSIDIAN_FOLDER  = "Meetings"        # folder path inside your vault
+Then open `config.toml` and fill in:
+
+```toml
+[ai]
+provider = "gemini"            # gemini | claude | openai
+
+[gemini]
+api_key = "your-key-here"
+model   = "gemini-2.5-flash"   # change model here if needed
+
+[obsidian]
+host    = "https://127.0.0.1:27124"
+api_key = "your-key-here"      # Obsidian → Settings → Local REST API
+folder  = "+/Meetings"         # folder path inside your vault
 ```
 
-**Projects** — add one entry per project you want to track:
+Only the selected provider needs a key and model; the sections of the other providers may keep their `YOUR_…` placeholders. The script checks the file on every run and stops with a one-line `Config error: …` in the log if something is missing — before calling the AI or writing to Obsidian.
+
+**Projects** — these stay in the code. Open `src/meeting_processor/processor.py` and add one entry per project you want to track:
 ```python
 PROJECTS = {
     "Halvorsen": {
@@ -181,11 +193,16 @@ All logs are written relative to the script location in `logs/`:
 
 | Symptom | What to check |
 |---|---|
+| `Config error: config.toml not found` | Copy `config.example.toml` to `config.toml` in `meeting_processor/` and fill it in |
+| `Config error: … is not valid TOML` | Syntax error in `config.toml` — the message names the line; values must be in double quotes |
+| `Config error: [ai] provider = …` | `provider` must be exactly `gemini`, `claude` or `openai` |
+| `Config error: [<section>] api_key is empty or a placeholder` | Fill in that key (or `model`/`host`/`folder`, whichever is named) in `config.toml` |
+| AI call fails with 401 / invalid API key | The key in the selected provider's section of `config.toml` is wrong or was rotated |
 | Nothing happens after export | Finder → right-click watch folder → Services → Folder Actions Setup → confirm action is checked |
 | `ModuleNotFoundError` | Confirm the venv is activated; re-run `pip install -r requirements.txt` |
 | `'list' object has no attribute 'get'` | Update to the latest version of the script — older versions did not handle MacWhisper's bare-array JSON format |
-| Obsidian write fails (401) | API key is wrong — copy it again from Obsidian → Settings → Local REST API |
-| Obsidian write fails (404) | `OBSIDIAN_FOLDER` does not exist in your vault — create it first |
+| Obsidian write fails (401) | `[obsidian] api_key` in `config.toml` is wrong — copy it again from Obsidian → Settings → Local REST API |
+| Obsidian write fails (404) | `[obsidian] folder` in `config.toml` does not exist in your vault — create it first |
 | Project shows as `Unknown` | The project name in `PROJECTS` must loosely match how it appears in the transcript; adjust the key name |
 | Wrong or missing title | Check `logs/meeting_processor.log` for the extracted H1 value; the AI may have omitted the heading |
 | Date is today instead of meeting date | MacWhisper's bare-array JSON has no date metadata — the script uses file modification time; export promptly after recording |
@@ -194,13 +211,14 @@ All logs are written relative to the script location in `logs/`:
 
 ## Switching AI Provider
 
-Change one line in the config:
+Change one line in `config.toml`:
 
-```python
-AI_PROVIDER = "claude"   # was "gemini"
+```toml
+[ai]
+provider = "claude"   # was "gemini"
 ```
 
-Make sure the corresponding API key is filled in and the SDK is installed (`pip install anthropic`). No other changes needed.
+Make sure `api_key` and `model` in the `[claude]` section are filled in and the SDK is installed (`pip install anthropic`). No code changes needed — the note's footer shows the configured model.
 
 ---
 
@@ -210,9 +228,11 @@ Make sure the corresponding API key is filled in and the SDK is installed (`pip 
 Meeting Automation/
 ├── MacWhisper-Exports/        ← drop MacWhisper JSON exports here
 └── meeting_processor/
+    ├── config.toml            ← your keys, provider, models, Obsidian (not in git)
+    ├── config.example.toml    ← template for config.toml (in git)
     ├── pyproject.toml         ← packaging + `meeting-processor` entry point
     ├── src/meeting_processor/
-    │   ├── processor.py       ← main code (config, prompts, pipeline, main())
+    │   ├── processor.py       ← main code (projects, prompts, pipeline, main())
     │   └── __main__.py        ← enables `python -m meeting_processor`
     ├── requirements.txt       ← Python dependencies
     ├── README.md              ← this file

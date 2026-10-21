@@ -40,20 +40,20 @@ Running it calls a real LLM API and writes to the live Obsidian vault (Obsidian 
 
 ## Architecture (meeting_processor/src/meeting_processor/processor.py)
 
-All configuration is module-level constants at the top of the file (provider, API keys, models, Obsidian host/folder, `PROJECTS`, `DEFAULT_TAGS`) — there is no config file or env-var loading. Paths are anchored to `PROJECT_DIR` (the `meeting_processor/` folder, two levels above `processor.py`), which is why an editable install (`pip install -e .`) is required. Logging is configured in `setup_logging()`, called from `main()`, not at import time. Entry points: the `meeting-processor` console script (`pyproject.toml`) and `__main__.py`.
+Secrets and machine-specific settings (AI provider, API key + model per provider, Obsidian host/key/folder) live in `meeting_processor/config.toml` (git-ignored; template `config.example.toml`). `load_config()` reads it with stdlib `tomllib` (hence Python ≥ 3.11), validates it, and returns a frozen `Config` dataclass for the selected provider; `main()` calls it once and passes `config` down through `process_meeting` → `build_messages` / `call_ai` / `write_to_obsidian`. Invalid config raises `ConfigError` → one-line log + exit 1, before any file is processed. No env vars or `.env` (Automator doesn't see `~/.zshrc`). `PROJECTS`, `DEFAULT_TAGS` and the prompts stay module-level constants in `processor.py`. Paths are anchored to `PROJECT_DIR` (the `meeting_processor/` folder, two levels above `processor.py`), which is why an editable install (`pip install -e .`) is required. Logging is configured in `setup_logging()`, called from `main()`, not at import time. Entry points: the `meeting-processor` console script (`pyproject.toml`) and `__main__.py`.
 
 Pipeline in `process_meeting()`:
 
 1. **Flavor detection** — filename ending `.mom.json` selects `SYSTEM_PROMPT_MOM` (formal, exhaustive, attributed Minutes of Meeting, adds `mom` tag); otherwise `SYSTEM_PROMPT` (concise personal note).
 2. **`parse_macwhisper_json`** — handles two MacWhisper shapes: a wrapped dict with `segments` + date metadata, or a bare array of segments (no date → falls back to file mtime). Produces `Speaker: text` lines.
-3. **`build_messages`** — injects `{DATE}`, `{AI_NAME}`, `{PROJECT_NAMES}` into the prompt via `str.replace` (not `.format`, so braces in prompts are safe).
-4. **`call_ai`** — dispatches on `AI_PROVIDER`; SDKs are imported lazily so only the chosen one must be installed. Gemini uses the new `google-genai` SDK (`from google import genai`), not `google-generativeai`.
+3. **`build_messages`** — injects `{DATE}`, `{AI_NAME}` (provider + configured model), `{PROJECT_NAMES}` into the prompt via `str.replace` (not `.format`, so braces in prompts are safe).
+4. **`call_ai`** — dispatches on `config.provider`; SDKs are imported lazily so only the chosen one must be installed. Gemini uses the new `google-genai` SDK (`from google import genai`), not `google-generativeai`.
 5. **Post-processing contract with the LLM output** — the prompts instruct the model to:
    - leave `{TITLE}` literally in frontmatter; Python extracts the first `# H1` and injects it (`extract_title_from_h1`, `inject_title`). The H1 also becomes the note filename.
    - emit `project: "<PROJECTS key>"` and an `extra_tags:` list; `resolve_project_and_tags` regex-rewrites these into `project: "[[wikilink]]"` and a merged, deduplicated `tags:` block (project tags + `DEFAULT_TAGS` + flavor tags + AI tags).
 
    These regexes depend on the exact frontmatter shape in the prompts — if you change field names or layout in either `SYSTEM_PROMPT*`, update the corresponding regexes (and vice versa). Both prompts must stay structurally in sync for these fields.
-6. **`write_to_obsidian`** — `PUT {OBSIDIAN_HOST}/vault/{OBSIDIAN_FOLDER}/{filename}` with `verify=False` (localhost self-signed cert). Overwrites an existing note with the same title.
+6. **`write_to_obsidian`** — `PUT {config.obsidian_host}/vault/{config.obsidian_folder}/{filename}` with `verify=False` (localhost self-signed cert). Overwrites an existing note with the same title.
 
 Prompts and generated notes follow the meeting's language (German or English).
 
