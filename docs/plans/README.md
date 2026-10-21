@@ -9,6 +9,16 @@ New features are planned here before they are implemented. Planning and implemen
 
 Each plan has a `Status` line: `draft` → `ready` → `in progress` → `done`.
 
+## Plan index
+
+Update this table when a plan is added or its status changes. To continue with a plan, open it and follow its "Resume here" section.
+
+| Plan | Status | Depends on |
+|---|---|---|
+| [01-config-file](01-config-file.md) | done | – |
+| [02-content-files](02-content-files.md) | ready | 01 |
+| [03-transcript-formats](03-transcript-formats.md) | ready | 02 |
+
 ## Workflow
 
 ### 1. Plan (no code changes)
