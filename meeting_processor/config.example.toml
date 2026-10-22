@@ -22,3 +22,7 @@ model   = "gpt-4o"
 host    = "https://127.0.0.1:27124"   # Local REST API plugin; self-signed cert
 api_key = "YOUR_OBSIDIAN_API_KEY"
 folder  = "+/Meetings"                # folder path inside your vault
+
+[template]
+active = "summary"   # default template: name of a file in templates/ (without .md)
+                     # override per file: "Call.mom.vtt" uses templates/mom.md

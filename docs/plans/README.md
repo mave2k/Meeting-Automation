@@ -16,7 +16,7 @@ Update this table when a plan is added or its status changes. To continue with a
 | Plan | Status | Depends on |
 |---|---|---|
 | [01-config-file](01-config-file.md) | done | – |
-| [02-content-files](02-content-files.md) | ready | 01 |
+| [02-content-files](02-content-files.md) — templates, projects, tags | done | 01 |
 | [03-transcript-formats](03-transcript-formats.md) | done | – |
 
 ## Workflow

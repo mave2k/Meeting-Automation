@@ -8,11 +8,13 @@ the LLM configured in config.toml (Gemini, Claude or OpenAI),
 and writes the formatted note to Obsidian via the Local
 REST API plugin.
 
-FLAVOR DETECTION
-  Standard note  →  any supported transcript file
-                    e.g.  2026-05-12 Client Call.json
-  Minutes of Meeting → filename has .mom before the extension
-                    e.g.  2026-05-12 Client Call.mom.json
+TEMPLATE SELECTION
+  Note templates (prompt + note layout) are the .md files in templates/;
+  projects and default tags live in projects.toml.
+  Default template  →  [template] active in config.toml
+  Per-file override →  template name right before the extension
+                       e.g.  2026-05-12 Client Call.<name>.vtt → templates/<name>.md
+  The template name is added to the note's tags.
 
 Dependencies:
 pip install google-genai anthropic openai requests
@@ -41,191 +43,19 @@ PROJECT_DIR = Path(__file__).resolve().parents[2]
 # AI provider, models, API keys and Obsidian settings live in config.toml
 # (see config.example.toml and load_config() below).
 
-# ── Projects ──────────────────────────────────────────
-# Key: the name the AI will use to identify the project
-# wikilink: exact Obsidian note name to link to in [[...]]
-# tags: fixed tags always added when this project is matched
-PROJECTS = {
-    "Halvorsen": {
-        "wikilink": "Halvorsen MOC",
-        "tags": ["halvorsen"],
-    },
-    "Atlas": {
-        "wikilink": "Halvorsen MOC",
-        "tags": ["halvorsen", "atlas"],
-    },
-    "Blackwyse": {
-        "wikilink": "Blackwyse",
-        "tags": ["blackwyse"],
-    },
-    "Medivia": {
-        "wikilink": "Medivia MOC",
-        "tags": ["medivia", "vantix", "clarion"],
-    },
-    "Clarion": {
-        "wikilink": "Medivia MOC",
-        "tags": ["medivia", "vantix", "clarion"],
-    },
-    "Vantix": {
-        "wikilink": "Medivia MOC",
-        "tags": ["medivia", "vantix", "clarion"],
-    },
-    "Internal": {
-        "wikilink": "Internal",
-        "tags": ["internal"],
-    },
-}
-
-# Tags added to every note regardless of project
-DEFAULT_TAGS = ["meeting", "transcript"]
+# Projects + default tags live in projects.toml, note templates (prompts) in
+# templates/*.md (see load_content() below).
 
 # ── Paths (all relative to the project folder) ────
 LOG_DIR = PROJECT_DIR / "logs"
 LOG_FILE = LOG_DIR / "meeting_processor.log"
 PROCESSED_LOG = LOG_DIR / "meeting_processor_processed.txt"
 CONFIG_FILE = PROJECT_DIR / "config.toml"
+PROJECTS_FILE = PROJECT_DIR / "projects.toml"
+TEMPLATES_DIR = PROJECT_DIR / "templates"
 
 # NOTE: WATCH_FOLDER is only needed for launchd Mode B (no-argument scan).
 WATCH_FOLDER = PROJECT_DIR.parent / "MacWhisper-Exports"
-
-# ══════════════════════════════════════════════════════
-# SYSTEM PROMPTS
-# ══════════════════════════════════════════════════════
-# Placeholders injected by Python at runtime:
-#   {DATE}          → meeting date from JSON metadata
-#   {TITLE}         → literal placeholder; replaced after H1 extraction
-#   {PROJECT_NAMES} → keys from PROJECTS config
-#   {AI_NAME}       → active AI provider + model name
-
-# ── Standard flavor ───────────────────────────────────
-# Concise personal reference note; distilled bullets; brevity over completeness.
-SYSTEM_PROMPT = """You are a precise meeting note formatter for an Obsidian knowledge vault.
-Given a raw meeting transcript, produce ONLY a valid Obsidian markdown note —
-no preamble, no explanation, no code fences around the output.
-
-Important: keep the string {TITLE} literally in the frontmatter title field.
-It will be replaced programmatically. Do NOT substitute it yourself.
-
-Also, there might be some microphone feedback, meaning that spoken parts are
-exactly repeated by myself in the transcript. Please account for that
-possibility when attributing meaning to the different persons in the meeting.
-
-For the meeting note, use the language the meeting was conducted in: If the conversation was mainly in German, create the note in German. If the conversation was mainly in English, create the note in English.
-
-Use this exact structure:
----
-title: "{TITLE}"
-type: meeting
-date: {DATE} <keep the date in form yyyy-mm-dd so that Obsidian interprets it correctly as a date field>
-participants:
-  - <full name of each speaker found in the transcript, one per line>
-project: "<one of: {PROJECT_NAMES} — or Unknown if none match>"
-summary: "<1-2 sentence summary of the core topic and key outcome>"
-extra_tags:
-  - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
----
-# <Concise title: YYYY-MM-DD + short description, include key participant names>
-
-## TL;DR
-<2-3 sentences on what was discussed and decided>
-
-## Context
-<1 short paragraph: why this meeting happened and what problem it addressed>
-
-## Key Discussion Points
-- <one bullet per major topic, one to two lines each>
-
-## Decisions
-- <explicit decisions made — if none, write "None recorded">
-
-## Action Items
-- [ ] <action item> — <owner if mentioned>
-
-## Open Questions
-- <unresolved questions or follow-ups — omit this entire section if none>
-
----
-*Transcribed via MacWhisper · Auto-formatted with {AI_NAME}*
-"""
-
-# ── Minutes of Meeting (MoM) flavor ───────────────────
-# Comprehensive, attribution-focused, suitable for external distribution.
-# Triggered by naming the transcript file with .mom before the extension (e.g. meeting.mom.json).
-SYSTEM_PROMPT_MOM = """You are a professional meeting minutes formatter producing formal Minutes of
-Meeting (MoM) suitable for external distribution to all participants.
-
-Given a raw meeting transcript, produce ONLY a valid Obsidian markdown note —
-no preamble, no explanation, no code fences around the output.
-
-Create the note in the language the meeting was mainly conducted in.
-
-Important: keep the string {TITLE} literally in the frontmatter title field.
-It will be replaced programmatically. Do NOT substitute it yourself.
-
-There might be some microphone feedback in the transcript, meaning spoken parts
-may be exactly repeated. Account for this — do not attribute repeated passages
-as separate contributions from different speakers.
-
-CONTENT RULES — follow these strictly:
-- Completeness over brevity. Do NOT condense or omit any significant point,
-  statement, or exchange. If something was said and matters, it must appear.
-- Attribution is mandatory wherever the transcript identifies a speaker.
-  Use the format "Speaker Name: …" or "According to [Name], …" consistently.
-- Under Key Discussion Points, use as many bullets as the content requires.
-  Group related points under sub-headings if the meeting covered multiple topics.
-- Decisions must state who made or confirmed the decision, and any conditions
-  or dependencies mentioned.
-- Action Items must include the responsible person's name and any deadline or
-  timeframe explicitly stated in the transcript.
-- Open Questions must list every unresolved point, with the name of the person
-  who raised it if identifiable.
-- Language must be neutral, precise, and professional — suitable for sending
-  directly to all meeting participants.
-
-Create the note content in English, if the main language of the meeting was English. If the raw transcript is mostly German, create the meeting summary in German, too.
-
-Use this exact structure:
-
----
-title: "{TITLE}"
-type: meeting
-date: {DATE} <keep the date in form yyyy-mm-dd so that Obsidian interprets it correctly as a date field>
-participants:
-  - <full name of each speaker found in the transcript, one per line>
-project: "<one of: {PROJECT_NAMES} — or Unknown if none match>"
-summary: "<1-2 sentence summary of the core topic and key outcome>"
-extra_tags:
-  - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
----
-# <Concise title: YYYY-MM-DD + short description, include key participant names>
-
-## Summary
-<3-5 sentences covering what was discussed, decisions reached, and next steps>
-
-## Context
-<1-2 paragraphs: background, purpose of the meeting, and the problem or
-opportunity it was called to address>
-
-## Attendees & Roles
-<List each identified meeting participant and their role or affiliation if determinable
-from the transcript>
-
-## Key Discussion Points
-<Comprehensive, attributed bullets — do not omit anything material.
-Use sub-headings (###) if the meeting covered clearly separate topics.>
-
-## Decisions
-<Each decision on its own bullet, with decision-owner and any conditions>
-
-## Action Items
-- [ ] <action item> — <owner if mentioned>
-
-## Open Questions
-<Each open question on its own bullet, with the name of who raised it>
-
----
-*Minutes of Meeting · Transcribed via MacWhisper · Auto-formatted with {AI_NAME}*
-"""
 
 # ══════════════════════════════════════════════════════
 # LOGGING
@@ -265,6 +95,7 @@ class Config:
     obsidian_host: str
     obsidian_api_key: str
     obsidian_folder: str
+    template: str
 
 
 def _is_unset(value) -> bool:
@@ -300,6 +131,10 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
         if _is_unset(obsidian.get(field)):
             raise ConfigError(f"{path.name}: [obsidian] {field} is empty or a placeholder")
 
+    template = data.get("template", {}).get("active")
+    if not isinstance(template, str) or not template.strip():
+        raise ConfigError(f"{path.name}: [template] active is missing — see config.example.toml")
+
     return Config(
         provider=provider,
         api_key=section["api_key"].strip(),
@@ -307,21 +142,113 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
         obsidian_host=obsidian["host"].strip().rstrip("/"),
         obsidian_api_key=obsidian["api_key"].strip(),
         obsidian_folder=obsidian["folder"].strip().strip("/"),
+        template=template.strip().lower(),
     )
+
+# ══════════════════════════════════════════════════════
+# CONTENT FILES (projects.toml, templates/*.md)
+# ══════════════════════════════════════════════════════
+
+TEMPLATE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+# Every template must keep these, or title injection / project + tag rewriting breaks
+TEMPLATE_MARKERS = ("{TITLE}", "{PROJECT_NAMES}", "project:", "extra_tags:")
+RESERVED_PROJECT = "Unknown"  # appended to {PROJECT_NAMES} by build_messages()
+
+
+@dataclass(frozen=True)
+class Content:
+    projects: dict        # name → {"wikilink": str, "tags": [str, ...]}
+    default_tags: list[str]
+    templates: dict[str, str]  # template name (file stem) → prompt text
+
+
+def _is_str_list(value) -> bool:
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
+def _load_projects(path: Path) -> tuple[dict, list[str]]:
+    name = path.name
+    if not path.exists():
+        raise ConfigError(f"{name} not found in {path.parent.name}/ — restore it with `git checkout -- {name}`")
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{name} is not valid TOML: {e}") from None
+
+    default_tags = data.get("default_tags", [])
+    if not _is_str_list(default_tags):
+        raise ConfigError(f'{name}: default_tags must be a list of strings, e.g. ["meeting"]')
+
+    projects = data.get("projects")
+    if not isinstance(projects, dict) or not projects:
+        raise ConfigError(f"{name}: no projects defined — add at least one [projects.<Name>] table")
+
+    for project, entry in projects.items():
+        if project.strip().lower() == RESERVED_PROJECT.lower():
+            raise ConfigError(f"{name}: project name '{project}' is reserved — rename it")
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{name}: projects.{project} must be a table with wikilink and tags")
+        wikilink = entry.get("wikilink")
+        if not isinstance(wikilink, str) or not wikilink.strip():
+            raise ConfigError(f'{name}: [projects.{project}] wikilink is missing or empty')
+        if not _is_str_list(entry.get("tags")):
+            raise ConfigError(f'{name}: [projects.{project}] tags must be a list of strings, e.g. ["{project.lower()}"]')
+
+    return projects, default_tags
+
+
+def _load_templates(templates_dir: Path) -> dict[str, str]:
+    folder = f"{templates_dir.name}/"
+    files = sorted(templates_dir.glob("*.md")) if templates_dir.is_dir() else []
+    if not files:
+        raise ConfigError(f"No templates found — {folder} must contain at least one .md file")
+
+    templates = {}
+    for file in files:
+        if not TEMPLATE_NAME_RE.match(file.stem):
+            raise ConfigError(
+                f"Invalid template filename '{file.name}' in {folder} — use lowercase letters, "
+                "digits, '-' or '_' only (the name becomes a tag and a filename suffix)"
+            )
+        text = file.read_text(encoding="utf-8")
+        missing = [m for m in TEMPLATE_MARKERS if m not in text]
+        if missing:
+            raise ConfigError(f"Template {folder}{file.name} is missing required marker(s): {', '.join(missing)}")
+        templates[file.stem] = text
+    return templates
+
+
+def load_content(
+    config: Config,
+    projects_file: Path = PROJECTS_FILE,
+    templates_dir: Path = TEMPLATES_DIR,
+) -> Content:
+    """Read and validate projects.toml and templates/*.md. Raises ConfigError."""
+    projects, default_tags = _load_projects(projects_file)
+    templates = _load_templates(templates_dir)
+    if config.template not in templates:
+        raise ConfigError(
+            f"Template '{config.template}' not found in {templates_dir.name}/ — "
+            f"available: {', '.join(templates)}"
+        )
+    return Content(projects=projects, default_tags=default_tags, templates=templates)
 
 # ══════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════
 
-def is_mom_flavor(filepath: Path) -> bool:
-    """Return True if the filename signals Minutes-of-Meeting flavor.
+def select_template(filepath: Path, content: Content, default: str) -> str:
+    """Return the template name to use for a transcript file.
 
-    Convention: .mom right before the file extension triggers MoM mode.
-    Examples:
-        2026-05-12 Client Call.mom.json  → MoM
-        2026-05-12 Client Call.json      → standard
+    A suffix right before the file extension that names an existing template
+    overrides the default (case-insensitive):
+        Call.<name>.vtt  → templates/<name>.md, if it exists
+        Call.vtt         → default ([template] active in config.toml)
+        Review v1.2.vtt  → default (no template named "2")
     """
-    return filepath.stem.lower().endswith(".mom")
+    suffix = Path(filepath.stem).suffix.lstrip(".").lower()
+    return suffix if suffix in content.templates else default
 
 
 def get_processed() -> set:
@@ -336,20 +263,27 @@ def mark_processed(filepath: Path) -> None:
         f.write(str(filepath) + "\n")
 
 
-def build_messages(parsed: dict, config: Config, mom: bool = False) -> tuple[str, str]:
+def build_messages(parsed: dict, config: Config, content: Content, template: str) -> tuple[str, str]:
     """Return (system_prompt, user_message) with all placeholders injected.
 
     Args:
-        parsed: Output of parse_transcript().
-        config: Loaded config.toml (provider + model give the AI name).
-        mom:    If True, use the MoM flavor prompt; otherwise standard.
+        parsed:   Output of parse_transcript().
+        config:   Loaded config.toml (provider + model give the AI name).
+        content:  Loaded projects.toml + templates.
+        template: Template name (see select_template()).
+
+    Placeholders in templates/*.md:
+        {DATE}          → meeting date
+        {AI_NAME}       → active AI provider + model name
+        {PROJECT_NAMES} → project keys from projects.toml + "Unknown"
+        {TITLE}         → left as-is here; replaced after H1 extraction (inject_title)
     """
     provider_label = {"gemini": "Gemini", "claude": "Claude", "openai": "OpenAI"}
     ai_name = f"{provider_label[config.provider]} ({config.model})"
 
-    project_names = ", ".join(PROJECTS.keys()) + ", Unknown"
+    project_names = ", ".join([*content.projects, RESERVED_PROJECT])
 
-    prompt_template = SYSTEM_PROMPT_MOM if mom else SYSTEM_PROMPT
+    prompt_template = content.templates[template]
     system = (
         prompt_template
         .replace("{DATE}", parsed["date_display"])
@@ -428,27 +362,30 @@ def inject_title(markdown: str, title: str) -> str:
     return result
 
 
-def resolve_project_and_tags(markdown: str, extra_fixed_tags: list[str] | None = None) -> str:
+def resolve_project_and_tags(
+    markdown: str, content: Content, extra_fixed_tags: list[str] | None = None
+) -> str:
     """
     Reads the AI-generated project name and extra_tags from the frontmatter,
     replaces them with the proper wikilink and a merged, deduplicated tag list.
 
     Args:
         markdown:         The AI-generated markdown string.
-        extra_fixed_tags: Additional tags to inject (e.g. ["mom"] for MoM flavor).
+        content:          Loaded projects.toml (projects + default tags).
+        extra_fixed_tags: Additional tags to inject (the template name, e.g. ["summary"]).
 
     Input frontmatter (AI-generated):
-        project: "Halvorsen"
+        project: "Acme"
         extra_tags:
         - error-handling
         - support-process
 
     Output frontmatter (Python-resolved):
-        project: "[[Halvorsen MOC]]"
+        project: "[[Acme MOC]]"
         tags:
-        - halvorsen           ← from PROJECTS config
-        - meeting         ← from DEFAULT_TAGS
-        - mom             ← from extra_fixed_tags (MoM flavor only)
+        - acme            ← from projects.toml (project tags)
+        - meeting         ← from projects.toml (default_tags)
+        - summary         ← from extra_fixed_tags (template name)
         - error-handling  ← from AI extra_tags
         - support-process
     """
@@ -459,7 +396,7 @@ def resolve_project_and_tags(markdown: str, extra_fixed_tags: list[str] | None =
     project_name = project_match.group(1).strip() if project_match else "Unknown"
 
     # ── Look up wikilink and fixed tags ───────────────
-    project_data = PROJECTS.get(project_name, {})
+    project_data = content.projects.get(project_name, {})
     wikilink = project_data.get("wikilink", "")
     project_tags = project_data.get("tags", [])
     log.info(f"  Project resolved: '{project_name}' → wikilink: '{wikilink}'")
@@ -477,7 +414,7 @@ def resolve_project_and_tags(markdown: str, extra_fixed_tags: list[str] | None =
     # ── Merge all tags (deduplicated, order preserved) ─
     seen = set()
     merged = []
-    for tag in project_tags + DEFAULT_TAGS + extra_fixed_tags + extra_tags:
+    for tag in project_tags + content.default_tags + extra_fixed_tags + extra_tags:
         if tag not in seen:
             merged.append(tag)
             seen.add(tag)
@@ -533,10 +470,9 @@ def write_to_obsidian(markdown: str, filename: str, config: Config) -> None:
 # CORE PIPELINE
 # ══════════════════════════════════════════════════════
 
-def process_meeting(transcript_file: Path, config: Config) -> None:
-    mom = is_mom_flavor(transcript_file)
-    flavor_label = "MoM" if mom else "standard"
-    log.info(f"── Processing ({flavor_label}): {transcript_file.name}")
+def process_meeting(transcript_file: Path, config: Config, content: Content) -> None:
+    template = select_template(transcript_file, content, config.template)
+    log.info(f"── Processing (template: {template}): {transcript_file.name}")
 
     parsed = parse_transcript(transcript_file)
     log.info(
@@ -544,9 +480,9 @@ def process_meeting(transcript_file: Path, config: Config) -> None:
         f"Transcript length: {len(parsed['transcript'])} chars"
     )
 
-    system_prompt, user_message = build_messages(parsed, config, mom=mom)
+    system_prompt, user_message = build_messages(parsed, config, content, template)
 
-    log.info(f"  Sending to {config.provider} ({config.model}) [{flavor_label} prompt]...")
+    log.info(f"  Sending to {config.provider} ({config.model}) [template: {template}]...")
     markdown = call_ai(system_prompt, user_message, config)
     log.info(f"  Response received ({len(markdown)} chars)")
 
@@ -555,9 +491,8 @@ def process_meeting(transcript_file: Path, config: Config) -> None:
 
     markdown = inject_title(markdown, title)
 
-    # Pass "mom" as an extra fixed tag when using the MoM flavor
-    extra_fixed_tags = ["mom"] if mom else []
-    markdown = resolve_project_and_tags(markdown, extra_fixed_tags=extra_fixed_tags)
+    # The template name is always added as a fixed tag
+    markdown = resolve_project_and_tags(markdown, content, extra_fixed_tags=[template])
 
     filename = f"{sanitize_filename(title)}.md"
 
@@ -573,6 +508,7 @@ def main() -> None:
     setup_logging()
     try:
         config = load_config()
+        content = load_content(config)
     except ConfigError as e:
         log.error(f"Config error: {e}")
         sys.exit(1)
@@ -589,7 +525,7 @@ def main() -> None:
                 continue
             time.sleep(2)  # let MacWhisper finish writing the file
             try:
-                process_meeting(filepath, config)
+                process_meeting(filepath, config, content)
                 mark_processed(filepath)
             except Exception as e:
                 log.error(f"Failed [{filepath.name}]: {e}", exc_info=True)
@@ -610,7 +546,7 @@ def main() -> None:
     for transcript_file in new_files:
         time.sleep(2)
         try:
-            process_meeting(transcript_file, config)
+            process_meeting(transcript_file, config, content)
             mark_processed(transcript_file)
         except Exception as e:
             log.error(f"Failed [{transcript_file.name}]: {e}", exc_info=True)
