@@ -2,15 +2,16 @@
 meeting_processor.processor
 ──────────────────────────────────────────────────────
 Triggered by Automator Folder Action or launchd WatchPaths.
-Reads a MacWhisper JSON export, sends the transcript to
+Reads a transcript file (MacWhisper JSON, …; see
+transcripts.SUPPORTED_EXTENSIONS), sends the transcript to
 the LLM configured in config.toml (Gemini, Claude or OpenAI),
 and writes the formatted note to Obsidian via the Local
 REST API plugin.
 
 FLAVOR DETECTION
-  Standard note  →  any filename ending in .json
+  Standard note  →  any supported transcript file
                     e.g.  2026-05-12 Client Call.json
-  Minutes of Meeting → filename contains .mom before .json
+  Minutes of Meeting → filename has .mom before the extension
                     e.g.  2026-05-12 Client Call.mom.json
 
 Dependencies:
@@ -18,7 +19,6 @@ pip install google-genai anthropic openai requests
 ──────────────────────────────────────────────────────
 """
 
-import json
 import logging
 import re
 import sys
@@ -27,6 +27,8 @@ import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from meeting_processor.transcripts import SUPPORTED_EXTENSIONS, is_supported, parse_transcript
 
 # ── Project folder (meeting_processor/) — all relative paths anchor here ──
 # This file lives in <project>/src/meeting_processor/, so go up two levels.
@@ -148,7 +150,7 @@ extra_tags:
 
 # ── Minutes of Meeting (MoM) flavor ───────────────────
 # Comprehensive, attribution-focused, suitable for external distribution.
-# Triggered by naming the export file with .mom.json (e.g. meeting.mom.json).
+# Triggered by naming the transcript file with .mom before the extension (e.g. meeting.mom.json).
 SYSTEM_PROMPT_MOM = """You are a professional meeting minutes formatter producing formal Minutes of
 Meeting (MoM) suitable for external distribution to all participants.
 
@@ -314,12 +316,12 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
 def is_mom_flavor(filepath: Path) -> bool:
     """Return True if the filename signals Minutes-of-Meeting flavor.
 
-    Convention: any filename ending in .mom.json triggers MoM mode.
+    Convention: .mom right before the file extension triggers MoM mode.
     Examples:
         2026-05-12 Client Call.mom.json  → MoM
         2026-05-12 Client Call.json      → standard
     """
-    return filepath.name.lower().endswith(".mom.json")
+    return filepath.stem.lower().endswith(".mom")
 
 
 def get_processed() -> set:
@@ -334,88 +336,11 @@ def mark_processed(filepath: Path) -> None:
         f.write(str(filepath) + "\n")
 
 
-def parse_macwhisper_json(json_file: Path) -> dict:
-    """
-    Parse a MacWhisper JSON export.
-
-    MacWhisper produces two different JSON shapes depending on export style:
-
-    Shape A — Wrapped dict (full export with metadata):
-        {
-            "createdAt": <timestamp>,
-            "segments": [ { "speaker": "...", "text": "...", "start": 0.0 }, ... ]
-        }
-
-    Shape B — Bare array (Segments/People export, no metadata):
-        [ { "speaker": "...", "text": "..." }, ... ]
-
-    This function handles both.
-    """
-    with open(json_file, encoding="utf-8") as f:
-        data = json.load(f)
-
-    # ── Normalise to a common structure ───────────────
-    if isinstance(data, list):
-        segments = data
-        raw_date = None
-    else:
-        segments = data.get("segments", [])
-        raw_date = (
-            data.get("createdAt")
-            or data.get("created_at")
-            or data.get("date")
-            or data.get("recordingDate")
-        )
-
-    # ── Date ─────────────────────────────────────────
-    if raw_date:
-        if isinstance(raw_date, (int, float)):
-            if raw_date > 1e10:  # milliseconds → seconds
-                raw_date /= 1000
-            dt = datetime.fromtimestamp(raw_date)
-        else:
-            dt = datetime.fromisoformat(str(raw_date))
-    else:
-        log.warning("No date metadata in JSON — using file modification time.")
-        dt = datetime.fromtimestamp(json_file.stat().st_mtime)
-
-    date_display = dt.strftime("%d.%m.%Y")
-    date_prefix = dt.strftime("%Y-%m-%d")
-
-    # ── Transcript ────────────────────────────────────
-    lines = []
-    for seg in segments:
-        speaker = (
-            seg.get("speaker")
-            or seg.get("speakerName")
-            or seg.get("speakerLabel")
-            or "Unknown"
-        )
-        text = seg.get("text", "").strip()
-        if text:
-            lines.append(f"{speaker}: {text}")
-
-    transcript_text = (
-        "\n".join(lines)
-        if lines
-        else (data.get("transcript", "") if isinstance(data, dict) else "")
-    )
-
-    if not transcript_text:
-        raise ValueError("No transcript content found in JSON file.")
-
-    return {
-        "date_display": date_display,
-        "date_prefix": date_prefix,
-        "transcript": transcript_text,
-    }
-
-
 def build_messages(parsed: dict, config: Config, mom: bool = False) -> tuple[str, str]:
     """Return (system_prompt, user_message) with all placeholders injected.
 
     Args:
-        parsed: Output of parse_macwhisper_json().
+        parsed: Output of parse_transcript().
         config: Loaded config.toml (provider + model give the AI name).
         mom:    If True, use the MoM flavor prompt; otherwise standard.
     """
@@ -608,12 +533,12 @@ def write_to_obsidian(markdown: str, filename: str, config: Config) -> None:
 # CORE PIPELINE
 # ══════════════════════════════════════════════════════
 
-def process_meeting(json_file: Path, config: Config) -> None:
-    mom = is_mom_flavor(json_file)
+def process_meeting(transcript_file: Path, config: Config) -> None:
+    mom = is_mom_flavor(transcript_file)
     flavor_label = "MoM" if mom else "standard"
-    log.info(f"── Processing ({flavor_label}): {json_file.name}")
+    log.info(f"── Processing ({flavor_label}): {transcript_file.name}")
 
-    parsed = parse_macwhisper_json(json_file)
+    parsed = parse_transcript(transcript_file)
     log.info(
         f"  Date: {parsed['date_display']} | "
         f"Transcript length: {len(parsed['transcript'])} chars"
@@ -656,7 +581,8 @@ def main() -> None:
     if len(sys.argv) > 1:
         for arg in sys.argv[1:]:
             filepath = Path(arg)
-            if filepath.suffix.lower() != ".json":
+            if not is_supported(filepath):
+                log.info(f"Skipping unsupported file type: {filepath.name}")
                 continue
             if str(filepath) in get_processed():
                 log.info(f"Already processed, skipping: {filepath.name}")
@@ -671,20 +597,21 @@ def main() -> None:
 
     # ── Mode B: launchd fires without arguments — scan WATCH_FOLDER ──
     processed = get_processed()
+    candidates = sorted(WATCH_FOLDER.iterdir()) if WATCH_FOLDER.is_dir() else []
     new_files = [
-        f for f in sorted(WATCH_FOLDER.glob("*.json"))
-        if str(f) not in processed
+        f for f in candidates
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS and str(f) not in processed
     ]
 
     if not new_files:
         log.info("No new files to process.")
         return
 
-    for json_file in new_files:
+    for transcript_file in new_files:
         time.sleep(2)
         try:
-            process_meeting(json_file, config)
-            mark_processed(json_file)
+            process_meeting(transcript_file, config)
+            mark_processed(transcript_file)
         except Exception as e:
-            log.error(f"Failed [{json_file.name}]: {e}", exc_info=True)
+            log.error(f"Failed [{transcript_file.name}]: {e}", exc_info=True)
 

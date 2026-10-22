@@ -1,0 +1,38 @@
+WEBVTT
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/12-0
+00:00:03.210 --> 00:00:08.540
+<v Weber Anna (ACME/IT)>Okay, I think we can start.
+The main topic today is the roadmap</v>
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/12-1
+00:00:08.540 --> 00:00:14.020
+<v Weber Anna (ACME/IT)>for the second half of the year and
+which features we move to next quarter.</v>
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/15-0
+00:00:14.800 --> 00:00:21.330
+<v Lindqvist Maja (ACME/PM)>From the product side, the reporting
+dashboard has the highest priority. Customers</v>
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/15-1
+00:00:21.330 --> 00:00:26.900
+<v Lindqvist Maja (ACME/PM)>keep asking for it in every review.</v>
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/18-0
+00:00:19.950 --> 00:00:20.610
+<v Okafor James>Agreed.</v>
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/15-2
+00:00:26.900 --> 00:00:31.480
+<v Lindqvist Maja (ACME/PM)>So my proposal is dashboard first, then the export API.</v>
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/21-0
+00:00:32.100 --> 00:00:38.760
+<v Okafor James>The export API depends on the new auth service,
+so it can't start before October anyway.
+
+7c1f3a2e-5b8d-4e21-9a6f-0d3c2b1a9e87/24-0
+00:00:39.300 --> 00:00:44.050
+<v Weber Anna (ACME/IT)>Then that's decided. Maja, please update
+the roadmap slide by Friday.</v>

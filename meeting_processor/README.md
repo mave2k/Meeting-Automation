@@ -1,9 +1,9 @@
 # Meeting Processor
 
-Automatically turns MacWhisper meeting transcripts into structured Obsidian notes using an AI model of your choice.
+Automatically turns meeting transcripts (MacWhisper, MS Teams, Zoom, …) into structured Obsidian notes using an AI model of your choice.
 
 **Workflow:**
-Record → Transcribe in MacWhisper → Export JSON → Folder watcher triggers script → Formatted note appears in Obsidian
+Record → Transcribe (MacWhisper) or download the transcript (Teams, Zoom) → Save it to the watch folder → Folder watcher triggers script → Formatted note appears in Obsidian
 
 ---
 
@@ -28,6 +28,30 @@ Record → Transcribe in MacWhisper → Export JSON → Folder watcher triggers 
 The model for each provider is set by `model` in its section.
 
 Only the SDK for your chosen provider needs to be installed.
+
+---
+
+## Supported Transcript Formats
+
+| Extension | Typical source | How it is read |
+|---|---|---|
+| `.json` | MacWhisper export | Speaker + text per segment; date from the export's metadata if present |
+| `.vtt` | MS Teams, Zoom, other meeting tools | Speaker from `<v Name>` (Teams) or a leading `Name: ` (Zoom); timestamps, cue IDs and formatting tags are removed; consecutive cues of the same speaker are merged into one turn |
+| `.srt` | Subtitle exports | Same as `.vtt` (speaker from a leading `Name: `) |
+| `.txt` | Any plain-text transcript or notes | Passed to the AI unchanged — no speaker detection |
+
+Every format is turned into the same `Speaker: text` transcript before it goes to the AI, so the note looks the same regardless of the source. Other file types (e.g. `.pdf`, `.docx`) are skipped with `Skipping unsupported file type` in the log. MS Teams' default `.docx` download is not supported — download the transcript as `.vtt` instead.
+
+**Meeting date** — determined in this order:
+1. The date in the file's metadata (MacWhisper `.json` with metadata only)
+2. The first `YYYY-MM-DD` date anywhere in the filename, e.g. `MDM Core Team Sync_2026-09-17.vtt` or `2026-05-12 Client Call.srt`
+3. The file's modification time (logged as a warning)
+
+Teams and Zoom transcripts carry no date inside the file, so put the date in the filename.
+
+**Minutes of Meeting** — add `.mom` right before the extension to get formal, exhaustive Minutes of Meeting (with the `mom` tag) instead of the concise standard note. Works for every format: `Client Call.mom.json`, `Steering Committee 2026-06-03.mom.vtt`, `Vendor Call.mom.srt`, `Notes.mom.txt`.
+
+**Samples** — `meeting_processor/samples/` contains one synthetic file per format (invented names and content) for trying things out without a real meeting.
 
 ---
 
@@ -114,22 +138,9 @@ The AI picks the project name from your `PROJECTS` keys based on the transcript 
 1. Open **Automator** → New Document → **Folder Action**
 2. Set the watched folder to `~/Projects/Meeting Automation/MacWhisper-Exports`
 3. Add a **Run Shell Script** action with Shell: `/bin/zsh` and Pass input: `as arguments`
-4. Paste:
+4. Paste the contents of [`automator/folder-action.sh`](automator/folder-action.sh) (a reference copy — Automator does not read the file, so paste it again after changing it)
 
-```zsh
-#!/bin/zsh
-CMD="$HOME/Projects/Meeting Automation/meeting_processor/.venv/bin/meeting-processor"
-LOG="$HOME/Projects/Meeting Automation/meeting_processor/logs/automator.log"
-
-mkdir -p "$(dirname "$LOG")"
-
-for f in "$@"; do
-  if [[ "$f" == *.json ]]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Triggered: $f" >> "$LOG"
-    "$CMD" "$f" >> "$LOG" 2>&1
-  fi
-done
-```
+Every file dropped into the folder is passed on; the script itself decides whether the format is supported and skips the rest. Hidden files (`.DS_Store`) and folders are ignored. Each run is logged to `logs/automator.log` with its exit code. (Older versions of this script had an `if [[ "$f" == *.json ]]` filter — replace it with the current version, otherwise `.vtt`, `.srt` and `.txt` files never reach the script.)
 
 5. Save the Folder Action
 
@@ -151,6 +162,7 @@ A new note should appear in your Obsidian vault within a few seconds. Check `log
 
 ## Daily Workflow
 
+**MacWhisper**
 1. Record the meeting in MacWhisper with speaker recognition enabled
 2. When done: **Export** in MacWhisper with these settings:
    - Style: `Transcript`
@@ -158,6 +170,11 @@ A new note should appear in your Obsidian vault within a few seconds. Check `log
    - Grouping: `People`
 3. Save the export to `~/Projects/Meeting Automation/MacWhisper-Exports/`
 4. The Automator action fires automatically → note appears in Obsidian in ~30 seconds
+
+**MS Teams / Zoom**
+1. Download the meeting transcript as `.vtt` (Teams: in the meeting's Recap → Transcript → Download → `.vtt`; Zoom: the cloud recording's transcript file)
+2. Make sure the filename contains the meeting date as `YYYY-MM-DD` (Teams usually adds it; otherwise rename) — add `.mom` before `.vtt` for Minutes of Meeting
+3. Save it to `~/Projects/Meeting Automation/MacWhisper-Exports/` — the rest is the same
 
 ---
 
@@ -200,12 +217,15 @@ All logs are written relative to the script location in `logs/`:
 | AI call fails with 401 / invalid API key | The key in the selected provider's section of `config.toml` is wrong or was rotated |
 | Nothing happens after export | Finder → right-click watch folder → Services → Folder Actions Setup → confirm action is checked |
 | `ModuleNotFoundError` | Confirm the venv is activated; re-run `pip install -r requirements.txt` |
-| `'list' object has no attribute 'get'` | Update to the latest version of the script — older versions did not handle MacWhisper's bare-array JSON format |
 | Obsidian write fails (401) | `[obsidian] api_key` in `config.toml` is wrong — copy it again from Obsidian → Settings → Local REST API |
 | Obsidian write fails (404) | `[obsidian] folder` in `config.toml` does not exist in your vault — create it first |
 | Project shows as `Unknown` | The project name in `PROJECTS` must loosely match how it appears in the transcript; adjust the key name |
 | Wrong or missing title | Check `logs/meeting_processor.log` for the extracted H1 value; the AI may have omitted the heading |
-| Date is today instead of meeting date | MacWhisper's bare-array JSON has no date metadata — the script uses file modification time; export promptly after recording |
+| Date is today instead of meeting date | The file has no date metadata (MacWhisper bare-array JSON, all `.vtt`/`.srt`/`.txt`) and no `YYYY-MM-DD` in its filename, so the file modification time was used — put the date in the filename |
+| `Skipping unsupported file type` | The extension is not `.json`, `.vtt`, `.srt` or `.txt` — e.g. a Teams `.docx` transcript; download it as `.vtt` instead |
+| `.vtt`/`.srt`/`.txt` files are never picked up | The Automator script still has the old `if [[ "$f" == *.json ]]` filter — remove it (see setup step 4) |
+| Everyone shows as `Unknown` | The `.vtt`/`.srt` file has no speaker names (neither `<v Name>` nor `Name: ` in the cues); for `.txt` this is expected — it is passed through without speaker detection |
+| MoM note expected but standard note created | `.mom` must come directly before the extension: `Call.mom.vtt`, not `Call.vtt.mom` or `Call mom.vtt` |
 
 ---
 
@@ -226,14 +246,18 @@ Make sure `api_key` and `model` in the `[claude]` section are filled in and the 
 
 ```
 Meeting Automation/
-├── MacWhisper-Exports/        ← drop MacWhisper JSON exports here
+├── MacWhisper-Exports/        ← drop transcripts here (.json, .vtt, .srt, .txt)
 └── meeting_processor/
     ├── config.toml            ← your keys, provider, models, Obsidian (not in git)
     ├── config.example.toml    ← template for config.toml (in git)
     ├── pyproject.toml         ← packaging + `meeting-processor` entry point
     ├── src/meeting_processor/
     │   ├── processor.py       ← main code (projects, prompts, pipeline, main())
+    │   ├── transcripts.py     ← one reader per transcript format → `Speaker: text`
     │   └── __main__.py        ← enables `python -m meeting_processor`
+    ├── samples/               ← synthetic example transcripts, one per format
+    ├── automator/
+    │   └── folder-action.sh   ← reference copy of the Automator Folder Action script
     ├── requirements.txt       ← Python dependencies
     ├── README.md              ← this file
     ├── .venv/                 ← Python virtual environment

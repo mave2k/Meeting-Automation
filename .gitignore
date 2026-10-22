@@ -25,3 +25,6 @@ dist/
 
 # Local config with secrets
 meeting_processor/config.toml
+
+# Real transcripts for local testing only — never commit
+examples/

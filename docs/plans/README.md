@@ -17,7 +17,7 @@ Update this table when a plan is added or its status changes. To continue with a
 |---|---|---|
 | [01-config-file](01-config-file.md) | done | – |
 | [02-content-files](02-content-files.md) | ready | 01 |
-| [03-transcript-formats](03-transcript-formats.md) | ready | 02 |
+| [03-transcript-formats](03-transcript-formats.md) | done | – |
 
 ## Workflow
 

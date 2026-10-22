@@ -1,0 +1,6 @@
+Team retro, quick notes
+
+Went well: deployment pipeline is much faster since the cache change.
+Didn't go well: too many meetings in sprint week two.
+Action: Anna moves the refinement meeting to Tuesdays.
+Action: James documents the new cache setup in the wiki.

@@ -1,0 +1,25 @@
+{
+  "createdAt": "2026-03-10T09:30:00",
+  "segments": [
+    {
+      "speaker": "Anna Weber",
+      "text": "Good morning. Let's go through the release checklist for version 2.4.",
+      "start": 0.0
+    },
+    {
+      "speaker": "James Okafor",
+      "text": "The payment module is merged, but the integration tests are still red on staging.",
+      "start": 6.2
+    },
+    {
+      "speaker": "Anna Weber",
+      "text": "Then we postpone the release to Thursday. James, can you fix the tests by Wednesday?",
+      "start": 13.8
+    },
+    {
+      "speaker": "James Okafor",
+      "text": "Yes, I'll take care of it.",
+      "start": 20.1
+    }
+  ]
+}

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single-script macOS automation: MacWhisper JSON transcript export → LLM (Gemini / Claude / OpenAI) → structured Markdown note written into an Obsidian vault via the Obsidian Local REST API plugin. Triggered by an Automator Folder Action watching `MacWhisper-Exports/` (sibling of `meeting_processor/`). Full setup and troubleshooting live in [meeting_processor/README.md](meeting_processor/README.md).
+A small macOS automation: meeting transcript (MacWhisper `.json`, Teams/Zoom `.vtt`, `.srt`, `.txt`) → LLM (Gemini / Claude / OpenAI) → structured Markdown note written into an Obsidian vault via the Obsidian Local REST API plugin. Triggered by an Automator Folder Action watching `MacWhisper-Exports/` (sibling of `meeting_processor/`). Full setup and troubleshooting live in [meeting_processor/README.md](meeting_processor/README.md).
 
 `Pauls Whisper Script.py` at the repo root is an unrelated reference script (reads `.whisper` ZIP files, calls the Anthropic API via raw `urllib`, creates a Bear note). It is not part of the pipeline.
 
@@ -29,10 +29,11 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .          # src layout: installs the `meeting-processor` command
 
-# Process a specific export (Mode A — what Automator does)
+# Process a specific transcript (Mode A — what Automator does)
 meeting-processor "../MacWhisper-Exports/<export>.json"
+meeting-processor "samples/Roadmap Review_2026-04-02.vtt"   # synthetic samples, one per format
 
-# Scan WATCH_FOLDER for unprocessed *.json files (Mode B — launchd style)
+# Scan WATCH_FOLDER for unprocessed supported files (Mode B — launchd style)
 meeting-processor         # equivalent: python -m meeting_processor
 ```
 
@@ -44,8 +45,15 @@ Secrets and machine-specific settings (AI provider, API key + model per provider
 
 Pipeline in `process_meeting()`:
 
-1. **Flavor detection** — filename ending `.mom.json` selects `SYSTEM_PROMPT_MOM` (formal, exhaustive, attributed Minutes of Meeting, adds `mom` tag); otherwise `SYSTEM_PROMPT` (concise personal note).
-2. **`parse_macwhisper_json`** — handles two MacWhisper shapes: a wrapped dict with `segments` + date metadata, or a bare array of segments (no date → falls back to file mtime). Produces `Speaker: text` lines.
+1. **Flavor detection** — `.mom` right before the extension (`Call.mom.json`, `Call.mom.vtt`, …) selects `SYSTEM_PROMPT_MOM` (formal, exhaustive, attributed Minutes of Meeting, adds `mom` tag); otherwise `SYSTEM_PROMPT` (concise personal note).
+2. **`parse_transcript`** (in `transcripts.py`) — dispatches on the file extension via the `READERS` registry (`SUPPORTED_EXTENSIONS` is derived from it; Mode A skips other files with a log line, Mode B ignores them). Every reader returns `{date_display, date_prefix, transcript}` with a plain `Speaker: text` transcript, so everything downstream is format-agnostic.
+   - `.json` — `parse_macwhisper_json`: a wrapped dict with `segments` + date metadata, or a bare array of segments.
+   - `.vtt` / `.srt` — shared cue helpers: drop headers/`NOTE` blocks, cue IDs and timestamp lines; speaker from `<v Name>` (Teams) or a leading `Name: ` (Zoom/SRT), else `Unknown`; strip tags; merge consecutive same-speaker cues. File order is kept on purpose (Teams emits overlapping cues out of order — sorting by timestamp would split statements).
+   - `.txt` — passed through unchanged.
+   - Text files are decoded `utf-8-sig`, falling back to `cp1252`.
+   - Date fallback chain (`resolve_date`): metadata (JSON only) → first valid `YYYY-MM-DD` in the filename → file mtime with a warning.
+
+   To add a format, write a reader returning that dict and register it in `READERS`. Real transcripts for local testing go in `examples/` (git-ignored, never commit); `meeting_processor/samples/` holds synthetic ones.
 3. **`build_messages`** — injects `{DATE}`, `{AI_NAME}` (provider + configured model), `{PROJECT_NAMES}` into the prompt via `str.replace` (not `.format`, so braces in prompts are safe).
 4. **`call_ai`** — dispatches on `config.provider`; SDKs are imported lazily so only the chosen one must be installed. Gemini uses the new `google-genai` SDK (`from google import genai`), not `google-generativeai`.
 5. **Post-processing contract with the LLM output** — the prompts instruct the model to:

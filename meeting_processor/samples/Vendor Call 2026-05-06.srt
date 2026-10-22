@@ -1,0 +1,17 @@
+﻿1
+00:00:00,500 --> 00:00:04,200
+Laura Chen: Thanks for joining. I'd like to
+review the offer you sent last week.
+
+2
+00:00:04,200 --> 00:00:09,800
+Laura Chen: The price for the support package is <i>higher</i> than expected.
+
+3
+00:00:10,300 --> 00:00:16,000
+Marco Rossi: We can offer a ten percent discount
+if you sign a two-year contract.
+
+4
+00:00:16,500 --> 00:00:19,900
+Laura Chen: I'll check that internally and get back to you by Monday.

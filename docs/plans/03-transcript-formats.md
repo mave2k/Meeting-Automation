@@ -1,16 +1,16 @@
 # Feature: Transcript-agnostic input (.json, .vtt, .srt, .txt)
 
-Status: ready
+Status: done
 
 Planned against: commit `d35c1f3`
-Depends on: `02-content-files` (implement 02 first — both change `main()` and the pipeline in `processor.py`)
+Depends on: none (independent of `02-content-files`; either can be implemented first — they only touch neighboring lines in `main()` and `process_meeting()`)
 
 ## Resume here
 1. Start a fresh Claude Code session and run `/implement-step 03-transcript-formats`. It implements the first unchecked step below and stops.
 2. Test that step as described in "How to test", then `git commit`.
 3. Repeat until all steps are ticked; the last step sets Status to `done`.
 
-Before step 1: this plan was written before `02-content-files` was implemented. Check `git diff d35c1f3 -- meeting_processor/src` and make sure "Approach" still matches the code (function names/signatures in `processor.py`, especially `main()`, `process_meeting()`, `is_mom_flavor()`). If it doesn't, update this plan before implementing.
+Before step 1: check `git diff d35c1f3 -- meeting_processor/src`. If `02-content-files` (or anything else) was implemented in the meantime, `process_meeting()` may take an extra `content` parameter — that doesn't affect this plan, but make sure "Approach" still matches the code (`main()`, `process_meeting()`, `is_mom_flavor()`). If it doesn't, update this plan before implementing.
 
 ## Goal
 The processor accepts MacWhisper `.json`, `.vtt` (MS Teams, Zoom, …), `.srt` and `.txt` transcripts. Every format is normalized into the same plain `Speaker: text` transcript that is sent to the LLM, so prompts and post-processing stay unchanged. The Minutes-of-Meeting flavor works for every format via `….mom.<ext>`.
@@ -52,11 +52,11 @@ The processor accepts MacWhisper `.json`, `.vtt` (MS Teams, Zoom, …), `.srt` a
 LLM output contract: unchanged — prompts, `{TITLE}`, `project:`, `extra_tags:` and regexes are not touched.
 
 ## Steps
-- [ ] 1. Add `examples/` to `.gitignore`. Create synthetic sample files (invented names and content only) in `meeting_processor/samples/`, each with a date in the filename: MacWhisper `.json`, Teams-style `.vtt` (cue IDs, multi-line cues, a sentence split over several cues, an overlapping out-of-order cue), Zoom-style `.vtt` (`Name: text`), `.srt`, `.txt`, plus one `….mom.vtt`. No code change.
-- [ ] 2. Create `transcripts.py` with `parse_transcript`, the reader registry, `SUPPORTED_EXTENSIONS`, the shared date fallback (incl. filename date) and the moved JSON reader. Wire `processor.py` to it (Mode A/B use `SUPPORTED_EXTENSIONS`, generic `is_mom_flavor`, skip log). Only `.json` registered yet — behavior unchanged for JSON.
-- [ ] 3. Add the `.vtt` reader and register it.
-- [ ] 4. Add the `.srt` and `.txt` readers and register them.
-- [ ] 5. Update `meeting_processor/README.md` (supported formats, `.mom.<ext>` convention, date determination, Automator script without the `*.json` filter, troubleshooting) and `CLAUDE.md` (pipeline step 2 now `parse_transcript` in `transcripts.py`). Then the user updates the Automator script by hand.
+- [x] 1. Add `examples/` to `.gitignore`. Create synthetic sample files (invented names and content only) in `meeting_processor/samples/`, each with a date in the filename: MacWhisper `.json`, Teams-style `.vtt` (cue IDs, multi-line cues, a sentence split over several cues, an overlapping out-of-order cue), Zoom-style `.vtt` (`Name: text`), `.srt`, `.txt`, plus one `….mom.vtt`. No code change.
+- [x] 2. Create `transcripts.py` with `parse_transcript`, the reader registry, `SUPPORTED_EXTENSIONS`, the shared date fallback (incl. filename date) and the moved JSON reader. Wire `processor.py` to it (Mode A/B use `SUPPORTED_EXTENSIONS`, generic `is_mom_flavor`, skip log). Only `.json` registered yet — behavior unchanged for JSON.
+- [x] 3. Add the `.vtt` reader and register it.
+- [x] 4. Add the `.srt` and `.txt` readers and register them.
+- [x] 5. Update `meeting_processor/README.md` (supported formats, `.mom.<ext>` convention, date determination, Automator script without the `*.json` filter, troubleshooting) and `CLAUDE.md` (pipeline step 2 now `parse_transcript` in `transcripts.py`). Then the user updates the Automator script by hand.
 
 ## Acceptance criteria
 - `examples/` does not appear in `git status`; `meeting_processor/samples/` is tracked and contains no real data.
