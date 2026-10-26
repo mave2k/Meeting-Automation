@@ -184,9 +184,16 @@ def _load_projects(path: Path) -> tuple[dict, list[str]]:
     if not isinstance(projects, dict) or not projects:
         raise ConfigError(f"{name}: no projects defined — add at least one [projects.<Name>] table")
 
+    seen: dict[str, str] = {}  # lowercased name → name as written (lookup is case-insensitive)
     for project, entry in projects.items():
-        if project.strip().lower() == RESERVED_PROJECT.lower():
+        key = project.strip().lower()
+        if key == RESERVED_PROJECT.lower():
             raise ConfigError(f"{name}: project name '{project}' is reserved — rename it")
+        if key in seen:
+            raise ConfigError(
+                f"{name}: projects '{seen[key]}' and '{project}' differ only in case — keep one"
+            )
+        seen[key] = project
         if not isinstance(entry, dict):
             raise ConfigError(f"{name}: projects.{project} must be a table with wikilink and tags")
         wikilink = entry.get("wikilink")
@@ -367,7 +374,12 @@ def resolve_project_and_tags(
 ) -> str:
     """
     Reads the AI-generated project name and extra_tags from the frontmatter,
-    replaces them with the proper wikilink and a merged, deduplicated tag list.
+    replaces them with a MOC: link and a merged, deduplicated tag list.
+
+    The AI's project answer is matched against projects.toml case-insensitively
+    and whitespace-trimmed. "Unknown", empty or unmatched → MOC: "" and no project
+    tags — never a link to a name that isn't configured. The MOC note itself is not
+    checked against the vault (projects.toml is the source of truth).
 
     Args:
         markdown:         The AI-generated markdown string.
@@ -375,13 +387,13 @@ def resolve_project_and_tags(
         extra_fixed_tags: Additional tags to inject (the template name, e.g. ["summary"]).
 
     Input frontmatter (AI-generated):
-        project: "Acme"
+        project: "acme "
         extra_tags:
         - error-handling
         - support-process
 
     Output frontmatter (Python-resolved):
-        project: "[[Acme MOC]]"
+        MOC: "[[Acme MOC]]"   ← replaces the project: line in place
         tags:
         - acme            ← from projects.toml (project tags)
         - meeting         ← from projects.toml (default_tags)
@@ -393,13 +405,18 @@ def resolve_project_and_tags(
 
     # ── Extract project name ──────────────────────────
     project_match = re.search(r'^project:\s*"?([^"\n]+)"?', markdown, re.MULTILINE)
-    project_name = project_match.group(1).strip() if project_match else "Unknown"
+    project_answer = project_match.group(1).strip() if project_match else RESERVED_PROJECT
 
-    # ── Look up wikilink and fixed tags ───────────────
-    project_data = content.projects.get(project_name, {})
+    # ── Look up MOC link and fixed tags (case-insensitive) ─
+    by_lower = {name.strip().lower(): name for name in content.projects}
+    project_key = by_lower.get(project_answer.lower())
+    project_data = content.projects[project_key] if project_key else {}
     wikilink = project_data.get("wikilink", "")
     project_tags = project_data.get("tags", [])
-    log.info(f"  Project resolved: '{project_name}' → wikilink: '{wikilink}'")
+    if project_key:
+        log.info(f"  Project resolved: '{project_answer}' → '{project_key}' → MOC: '{wikilink}'")
+    else:
+        log.info(f"  Project unresolved: '{project_answer}' → MOC: ''")
 
     # ── Extract AI-generated extra_tags ───────────────
     extra_tags_match = re.search(
@@ -422,12 +439,14 @@ def resolve_project_and_tags(
     tags_yaml = "\n".join(f"  - {t}" for t in merged)
     log.info(f"  Tags merged: {merged}")
 
-    # ── Replace project: field ─────────────────────────
-    wikilink_value = f'"[[{wikilink}]]"' if wikilink else '""'
+    # ── Replace the AI's project: line with MOC: (same position) ─
+    # Only the first occurrence (the frontmatter), so a "project:" line in the body stays.
+    moc_line = f'MOC: "[[{wikilink}]]"' if wikilink else 'MOC: ""'
     markdown = re.sub(
         r'^project:\s*"?[^"\n]*"?',
-        f'project: {wikilink_value}',
+        lambda _: moc_line,
         markdown,
+        count=1,
         flags=re.MULTILINE,
     )
 

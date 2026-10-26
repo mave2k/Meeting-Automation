@@ -1,0 +1,6 @@
+Sabine Krüger: Hallo zusammen, heute geht es um den Stand bei Medivia.
+Klaus Hoffmann: Die Schnittstelle zwischen Medivia und dem Vantix-System läuft im Test stabil. Clarion hat die Freigabe für die Produktivsetzung noch nicht erteilt.
+Sabine Krüger: Was fehlt Clarion noch?
+Klaus Hoffmann: Ein Lasttest mit den echten Medivia-Datenmengen. Den können wir nächste Woche fahren.
+Sabine Krüger: Gut, dann plane ich den Go-live für Medivia auf Anfang September. Klaus, schickst du Clarion und Vantix den Testplan?
+Klaus Hoffmann: Mache ich bis Mittwoch.

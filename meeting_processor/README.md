@@ -82,7 +82,7 @@ The template name is added to the note's tags (`summary`, `mom`, …), so you ca
 
 Rules for templates (checked on every run — a broken template stops the run with a one-line error before anything is processed):
 - **Filename:** lowercase letters, digits, `-` and `_` only (`steering.md`, `client-call.md` — not `My Template.md`), because the name becomes a tag and a filename suffix.
-- **Required markers:** every template must contain `{TITLE}`, `{PROJECT_NAMES}`, `project:` and `extra_tags:`. The script relies on them to set the note title, link the project and build the tag list — keep the frontmatter part of an existing template as it is and only change the rest.
+- **Required markers:** every template must contain `{TITLE}`, `{PROJECT_NAMES}`, `project:` and `extra_tags:`. The script relies on them to set the note title, link the MOC and build the tag list (`project:` is where the AI names the project; the script turns that line into `MOC:`) — keep the frontmatter part of an existing template as it is and only change the rest.
 
 **Placeholders** the script fills in before sending the template to the AI:
 
@@ -163,7 +163,7 @@ Only the selected provider needs a key and model; the sections of the other prov
 default_tags = ["meeting", "transcript"]
 
 [projects.Halvorsen]
-wikilink = "Halvorsen MOC"     # exact Obsidian note name for [[...]]
+wikilink = "Halvorsen MOC"     # exact name of an existing MOC note → MOC: "[[Halvorsen MOC]]"
 tags     = ["halvorsen"]       # tags always applied for this project
 
 [projects."Halvorsen Nord"] # names with spaces need quotes
@@ -171,7 +171,13 @@ wikilink = "Halvorsen MOC"
 tags     = ["halvorsen", "nord"]
 ```
 
-The AI picks the project name from these keys based on the transcript content (`Unknown` if none fits — so `Unknown` can't be used as a project name). It also generates 2–4 additional content-specific tags automatically. Project tags, `default_tags`, the template name and the AI tags are merged and deduplicated before writing to Obsidian.
+The AI picks the project name from these keys based on the transcript content (`Unknown` if none fits — so `Unknown` can't be used as a project name). The script then writes the project's `wikilink` into the note as the parent link `MOC: "[[…]]"`. Several projects may share one MOC (e.g. `Internal` → `Blackwyse MOC`, with its own `internal` tag).
+
+- The AI's answer is matched ignoring case and surrounding spaces (`internal` finds `Internal`), so two project names that differ only in case are not allowed.
+- If the answer is `Unknown` or not a configured project, the note gets `MOC: ""` and no project tags — the script never links to a note name that isn't in `projects.toml`.
+- `wikilink` is **not** checked against your vault. A typo gives a broken (greyed-out) link — fix the name in `projects.toml`.
+
+The AI also generates 2–4 additional content-specific tags automatically. Project tags, `default_tags`, the template name and the AI tags are merged and deduplicated before writing to Obsidian.
 
 **Note templates** — the note format is defined by the Markdown files in `templates/`; `summary` is used by default. See [Note Templates](#note-templates) to change the layout or add a new note type.
 
@@ -224,7 +230,25 @@ A new note should appear in your Obsidian vault within a few seconds. Check `log
 
 The note layout is defined by the template (see [Note Templates](#note-templates)). With the default `summary` template, each note contains:
 
-- **Frontmatter** — `title`, `type`, `date`, `participants`, `project` (wikilink), `summary`, `tags`
+- **Frontmatter** — `title`, `type`, `date`, `participants`, `MOC` (link to the project's MOC note), `summary`, `tags`:
+  ```yaml
+  ---
+  title: "Halvorsen Rollout Sync – Approval Workflow"
+  type: meeting
+  date: 2026-07-07
+  participants:
+    - Anna Weber
+    - James Okafor
+  MOC: "[[Halvorsen MOC]]"
+  summary: "Pilot plant is live; approval workflow must be faster before the second plant."
+  tags:
+    - halvorsen
+    - meeting
+    - transcript
+    - summary
+    - approval-workflow
+  ---
+  ```
 - **TL;DR** — 2–3 sentence overview
 - **Context** — why the meeting happened
 - **Key Discussion Points** — one bullet per topic
@@ -261,13 +285,14 @@ All logs are written relative to the script location in `logs/`:
 | `Config error: Template templates/….md is missing required marker(s): …` | Put the named marker(s) back into that template — copy the frontmatter block from `templates/summary.md` |
 | `Config error: Invalid template filename '…'` | Rename the file in `templates/` to lowercase letters, digits, `-` or `_` only (e.g. `My Template.md` → `my-template.md`) |
 | `Config error: No templates found` | `templates/` is missing or empty — restore it with `git checkout -- templates/` |
-| `Config error: projects.toml …` | The message names the problem: file missing (`git checkout -- projects.toml`), invalid TOML, a project without `wikilink` or `tags`, or a project named `Unknown` (reserved) |
+| `Config error: projects.toml …` | The message names the problem: file missing (`git checkout -- projects.toml`), invalid TOML, a project without `wikilink` or `tags`, a project named `Unknown` (reserved), or two projects that differ only in case (`Halvorsen` / `halvorsen`) |
 | AI call fails with 401 / invalid API key | The key in the selected provider's section of `config.toml` is wrong or was rotated |
 | Nothing happens after export | Finder → right-click watch folder → Services → Folder Actions Setup → confirm action is checked |
 | `ModuleNotFoundError` | Confirm the venv is activated; re-run `pip install -r requirements.txt` |
 | Obsidian write fails (401) | `[obsidian] api_key` in `config.toml` is wrong — copy it again from Obsidian → Settings → Local REST API |
 | Obsidian write fails (404) | `[obsidian] folder` in `config.toml` does not exist in your vault — create it first |
-| Project shows as `Unknown` | The project name in `projects.toml` must loosely match how it appears in the transcript; adjust the key name |
+| `MOC` is empty (`MOC: ""`) | The AI answered `Unknown` or a name that isn't in `projects.toml` — the log line `Project unresolved: '…'` shows its answer. The project name in `projects.toml` must loosely match how the project is mentioned in the transcript; adjust the key name or add the project |
+| `MOC` link is greyed out / "create note" in Obsidian | The `wikilink` in `projects.toml` doesn't match an existing note exactly (it is not checked against the vault) — fix the spelling |
 | Wrong or missing title | Check `logs/meeting_processor.log` for the extracted H1 value; the AI may have omitted the heading |
 | Date is today instead of meeting date | The file has no date metadata (MacWhisper bare-array JSON, all `.vtt`/`.srt`/`.txt`) and no `YYYY-MM-DD` in its filename, so the file modification time was used — put the date in the filename |
 | `Skipping unsupported file type` | The extension is not `.json`, `.vtt`, `.srt` or `.txt` — e.g. a Teams `.docx` transcript; download it as `.vtt` instead |
@@ -298,7 +323,7 @@ Meeting Automation/
 └── meeting_processor/
     ├── config.toml            ← your keys, provider, models, Obsidian (not in git)
     ├── config.example.toml    ← template for config.toml (in git)
-    ├── projects.toml          ← projects (wikilink + tags) and default tags
+    ├── projects.toml          ← projects (MOC wikilink + tags) and default tags
     ├── templates/             ← note templates (prompt + layout), one .md per note type
     │   ├── summary.md
     │   └── mom.md

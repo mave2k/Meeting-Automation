@@ -1,0 +1,6 @@
+Laura Chen: Thanks for presenting, Contoso Logistics. Can you summarize your warehouse tracking product once more?
+Peter Novak: Sure. Contoso Logistics offers RFID-based tracking for pallets, with a cloud dashboard and an open API.
+Laura Chen: What does a typical rollout look like?
+Peter Novak: Usually three months per warehouse. Pricing is per tracked pallet per month.
+Laura Chen: Understood. Please send us the price sheet and a reference customer in our region.
+Peter Novak: Will do by next Tuesday.

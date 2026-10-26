@@ -1,0 +1,6 @@
+Anna Weber: Good morning everyone. Let's start with the status of the Halvorsen rollout.
+James Okafor: The pilot plant at Halvorsen went live on Monday. Users are mostly happy, but the approval workflow is still too slow.
+Anna Weber: Halvorsen expects a fix before the second plant goes live in August. Can we make that?
+James Okafor: Yes, if we get access to the Halvorsen test system this week.
+Anna Weber: I'll ask the Halvorsen project lead today. Next topic: training materials for the Halvorsen key users.
+James Okafor: The draft is ready, I'll send it to Halvorsen for review by Friday.

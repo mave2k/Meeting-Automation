@@ -1,0 +1,5 @@
+Maja Lindqvist: Welcome to the Atlas workshop. As a reminder, Atlas is the new reporting stream within the Halvorsen programme.
+Thomas Berger: For Atlas we have collected 14 report requirements so far. Six of them overlap with existing Halvorsen dashboards.
+Maja Lindqvist: Then let's reuse those and only build the eight new Atlas reports.
+Thomas Berger: Agreed. The Atlas data model needs one more review with the Halvorsen data owners.
+Maja Lindqvist: I'll schedule that review for next week. Atlas go-live target stays end of September.
