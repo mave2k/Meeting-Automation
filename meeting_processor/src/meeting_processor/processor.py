@@ -169,7 +169,9 @@ def _is_str_list(value) -> bool:
 def _load_projects(path: Path) -> tuple[dict, list[str]]:
     name = path.name
     if not path.exists():
-        raise ConfigError(f"{name} not found in {path.parent.name}/ — restore it with `git checkout -- {name}`")
+        raise ConfigError(
+            f"{name} not found in {path.parent.name}/ — copy projects.example.toml to {name} and fill it in"
+        )
     try:
         with open(path, "rb") as f:
             data = tomllib.load(f)

@@ -28,3 +28,6 @@ meeting_processor/config.toml
 
 # Real transcripts for local testing only — never commit
 examples/
+
+# Local projects with real client names — never commit (template: projects.example.toml)
+meeting_processor/projects.toml

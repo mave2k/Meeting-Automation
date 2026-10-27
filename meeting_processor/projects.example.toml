@@ -1,0 +1,52 @@
+# Projects and default tags — read by meeting-processor on every run.
+#
+# Copy this file to projects.toml (same folder) and replace the example
+# projects with your own. projects.toml is ignored by git, because it usually
+# contains real client names — never commit it.
+
+# Tags added to every note regardless of project
+default_tags = ["meeting", "transcript"]
+
+# One table per project.
+#   Key      = name the AI uses to identify the project (offered to the AI in
+#              {PROJECT_NAMES}). Names with spaces need quotes: [projects."Medivia Health"]
+#              Matching is case-insensitive, so names may not differ only in case.
+#              "Unknown" is reserved — the code adds it for meetings that match no project.
+#   wikilink = exact name of an existing MOC note; written to the note as MOC: "[[...]]".
+#              Not checked against the vault — a typo gives a broken link.
+#   tags     = fixed tags added when this project is matched
+
+# ── A client ──────────────────────────────────────────
+[projects.Halvorsen]
+wikilink = "Halvorsen MOC"
+tags     = ["halvorsen"]
+
+# A sub-project at that client: same MOC, one extra tag
+[projects.Atlas]
+wikilink = "Halvorsen MOC"
+tags     = ["halvorsen", "atlas"]
+
+# ── A client programme with partner companies ─────────
+# Each company name is its own key, so the AI can match whichever one is
+# mentioned; all of them file into the same MOC with the same tags.
+[projects."Medivia Health"]
+wikilink = "Medivia MOC"
+tags     = ["medivia", "clarion", "vantix"]
+
+[projects.Clarion]
+wikilink = "Medivia MOC"
+tags     = ["medivia", "clarion", "vantix"]
+
+[projects.Vantix]
+wikilink = "Medivia MOC"
+tags     = ["medivia", "clarion", "vantix"]
+
+# ── Your own company ──────────────────────────────────
+[projects.Northbridge]
+wikilink = "Northbridge Consulting MOC"
+tags     = ["northbridge"]
+
+# Internal team meetings (no client): filed under your company's MOC
+[projects.Internal]
+wikilink = "Northbridge Consulting MOC"
+tags     = ["internal"]

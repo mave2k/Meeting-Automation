@@ -157,21 +157,27 @@ active = "summary"             # default note template (a file in templates/)
 
 Only the selected provider needs a key and model; the sections of the other providers may keep their `YOUR_…` placeholders. The script checks the file on every run and stops with a one-line `Config error: …` in the log if something is missing — before calling the AI or writing to Obsidian.
 
-**Projects and tags** — live in `projects.toml` (in git, no secrets). Add one table per project you want to track:
+**Projects and tags** — live in `projects.toml`, which is ignored by git because it contains your real client names. Create it from the template, which holds made-up example projects:
+
+```zsh
+cp projects.example.toml projects.toml
+```
+
+Then replace the examples with one table per project you want to track:
 ```toml
 # Tags added to every note regardless of project
 default_tags = ["meeting", "transcript"]
 
 [projects.Halvorsen]
-wikilink = "Halvorsen MOC"     # exact name of an existing MOC note → MOC: "[[Halvorsen MOC]]"
-tags     = ["halvorsen"]       # tags always applied for this project
+wikilink = "Halvorsen MOC"   # exact name of an existing MOC note → MOC: "[[Halvorsen MOC]]"
+tags     = ["halvorsen"]     # tags always applied for this project
 
-[projects."Halvorsen Nord"] # names with spaces need quotes
-wikilink = "Halvorsen MOC"
-tags     = ["halvorsen", "nord"]
+[projects."Medivia Health"]  # names with spaces need quotes
+wikilink = "Medivia MOC"
+tags     = ["medivia"]
 ```
 
-The AI picks the project name from these keys based on the transcript content (`Unknown` if none fits — so `Unknown` can't be used as a project name). The script then writes the project's `wikilink` into the note as the parent link `MOC: "[[…]]"`. Several projects may share one MOC (e.g. `Internal` → `Blackwyse MOC`, with its own `internal` tag).
+The AI picks the project name from these keys based on the transcript content (`Unknown` if none fits — so `Unknown` can't be used as a project name). The script then writes the project's `wikilink` into the note as the parent link `MOC: "[[…]]"`. Several projects may share one MOC (e.g. a sub-project, a partner company, or `Internal` → your own company's MOC, each with its own tags — see `projects.example.toml`).
 
 - The AI's answer is matched ignoring case and surrounding spaces (`internal` finds `Internal`), so two project names that differ only in case are not allowed.
 - If the answer is `Unknown` or not a configured project, the note gets `MOC: ""` and no project tags — the script never links to a note name that isn't in `projects.toml`.
@@ -285,7 +291,7 @@ All logs are written relative to the script location in `logs/`:
 | `Config error: Template templates/….md is missing required marker(s): …` | Put the named marker(s) back into that template — copy the frontmatter block from `templates/summary.md` |
 | `Config error: Invalid template filename '…'` | Rename the file in `templates/` to lowercase letters, digits, `-` or `_` only (e.g. `My Template.md` → `my-template.md`) |
 | `Config error: No templates found` | `templates/` is missing or empty — restore it with `git checkout -- templates/` |
-| `Config error: projects.toml …` | The message names the problem: file missing (`git checkout -- projects.toml`), invalid TOML, a project without `wikilink` or `tags`, a project named `Unknown` (reserved), or two projects that differ only in case (`Halvorsen` / `halvorsen`) |
+| `Config error: projects.toml …` | The message names the problem: file missing (copy `projects.example.toml` to `projects.toml`), invalid TOML, a project without `wikilink` or `tags`, a project named `Unknown` (reserved), or two projects that differ only in case (`Halvorsen` / `halvorsen`) |
 | AI call fails with 401 / invalid API key | The key in the selected provider's section of `config.toml` is wrong or was rotated |
 | Nothing happens after export | Finder → right-click watch folder → Services → Folder Actions Setup → confirm action is checked |
 | `ModuleNotFoundError` | Confirm the venv is activated; re-run `pip install -r requirements.txt` |
@@ -323,7 +329,8 @@ Meeting Automation/
 └── meeting_processor/
     ├── config.toml            ← your keys, provider, models, Obsidian (not in git)
     ├── config.example.toml    ← template for config.toml (in git)
-    ├── projects.toml          ← projects (MOC wikilink + tags) and default tags
+    ├── projects.toml          ← your projects (MOC wikilink + tags) and default tags (not in git)
+    ├── projects.example.toml  ← template for projects.toml with made-up projects (in git)
     ├── templates/             ← note templates (prompt + layout), one .md per note type
     │   ├── summary.md
     │   └── mom.md
