@@ -97,17 +97,20 @@ Rules for templates (checked on every run — a broken template stops the run wi
 
 ## Setup
 
-### 1. Create the folder structure
+### 1. Get the code and create the watch folder
 
 ```zsh
-mkdir -p ~/Projects/Meeting\ Automation/meeting_processor/logs
+mkdir -p ~/Projects
+git clone https://github.com/mave2k/Meeting-Automation.git ~/Projects/Meeting\ Automation
 mkdir -p ~/Projects/Meeting\ Automation/MacWhisper-Exports
 ```
 
-The code lives in:
+The code then lives in:
 ```
 ~/Projects/Meeting Automation/meeting_processor/src/meeting_processor/processor.py
 ```
+
+`logs/` is created automatically on the first run. The paths in this README and in the Automator script assume this location — if you clone elsewhere, adjust them.
 
 ### 2. Create a Python virtual environment
 
@@ -128,6 +131,15 @@ pip install -e .          # installs the `meeting-processor` command (editable)
 You only need to rerun the install commands if you recreate the `.venv`, add a library to `requirements.txt` (rerun the first), or change the entry point in `pyproject.toml` (rerun the second).
 
 ### 3. Configure the script
+
+A fresh clone contains only templates for your personal settings. Create two files from them in `meeting_processor/` — both are ignored by git, so your keys and client names never get committed:
+
+| Create | From | Contains |
+|---|---|---|
+| `config.toml` | `config.example.toml` | API keys, AI provider and model, Obsidian connection, default note template |
+| `projects.toml` | `projects.example.toml` | Your projects (MOC link + tags) and the tags added to every note |
+
+The script won't run until both exist; if one is missing or incomplete, it stops with a one-line `Config error: …` that names the file and the problem.
 
 **API keys, provider, models, Obsidian** — these live in `config.toml`, which is ignored by git so your keys never get committed. Create it from the template:
 
