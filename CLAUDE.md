@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A small macOS automation: meeting transcript (MacWhisper `.json`, Teams/Zoom `.vtt`, `.srt`, `.txt`) → LLM (Gemini / Claude / OpenAI) → structured Markdown note written into an Obsidian vault via the Obsidian Local REST API plugin. Triggered by an Automator Folder Action watching `MacWhisper-Exports/` (sibling of `meeting_processor/`). Full setup and troubleshooting live in [meeting_processor/README.md](meeting_processor/README.md).
+A small macOS automation: meeting transcript (MacWhisper `.json`, Teams/Zoom `.vtt`, `.srt`, `.txt`) → LLM (Gemini / Claude / OpenAI) → structured Markdown note written into an Obsidian vault via the Obsidian Local REST API plugin. Triggered by an Automator Folder Action watching `MacWhisper-Exports/` (sibling of `meeting_processor/`). Full setup and troubleshooting live in [README.md](README.md) at the repo root.
 
-`Pauls Whisper Script.py` at the repo root is an unrelated reference script (reads `.whisper` ZIP files, calls the Anthropic API via raw `urllib`, creates a Bear note). It is not part of the pipeline.
+`reference/Pauls Whisper Script.py` is an unrelated reference script (reads `.whisper` ZIP files, calls the Anthropic API via raw `urllib`, creates a Bear note). It is not part of the pipeline.
 
 ## Workflow: plan first, then implement
 

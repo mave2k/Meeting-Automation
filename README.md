@@ -204,7 +204,7 @@ The AI also generates 2–4 additional content-specific tags automatically. Proj
 1. Open **Automator** → New Document → **Folder Action**
 2. Set the watched folder to `~/Projects/Meeting Automation/MacWhisper-Exports`
 3. Add a **Run Shell Script** action with Shell: `/bin/zsh` and Pass input: `as arguments`
-4. Paste the contents of [`automator/folder-action.sh`](automator/folder-action.sh) (a reference copy — Automator does not read the file, so paste it again after changing it)
+4. Paste the contents of [`meeting_processor/automator/folder-action.sh`](meeting_processor/automator/folder-action.sh) (a reference copy — Automator does not read the file, so paste it again after changing it)
 
 Every file dropped into the folder is passed on; the script itself decides whether the format is supported and skips the rest. Hidden files (`.DS_Store`) and folders are ignored. Each run is logged to `logs/automator.log` with its exit code. (Older versions of this script had an `if [[ "$f" == *.json ]]` filter — replace it with the current version, otherwise `.vtt`, `.srt` and `.txt` files never reach the script.)
 
@@ -337,7 +337,11 @@ Make sure `api_key` and `model` in the `[claude]` section are filled in and the 
 
 ```
 Meeting Automation/
-├── MacWhisper-Exports/        ← drop transcripts here (.json, .vtt, .srt, .txt)
+├── README.md                  ← this file
+├── CLAUDE.md                  ← project guidance for Claude Code
+├── docs/plans/                ← feature plans (see "Developing new features")
+├── reference/                 ← unrelated reference scripts, not part of the pipeline
+├── MacWhisper-Exports/        ← drop transcripts here (.json, .vtt, .srt, .txt) — not in git
 └── meeting_processor/
     ├── config.toml            ← your keys, provider, models, Obsidian (not in git)
     ├── config.example.toml    ← template for config.toml (in git)
@@ -355,7 +359,6 @@ Meeting Automation/
     ├── automator/
     │   └── folder-action.sh   ← reference copy of the Automator Folder Action script
     ├── requirements.txt       ← Python dependencies
-    ├── README.md              ← this file
     ├── .venv/                 ← Python virtual environment
     └── logs/
         ├── automator.log
@@ -367,4 +370,4 @@ Meeting Automation/
 
 ## Developing new features
 
-New features are planned in `docs/plans/` before they are implemented, using Claude Code (`/plan-feature`, then `/implement-step`). See [docs/plans/README.md](../docs/plans/README.md) for the workflow.
+New features are planned in `docs/plans/` before they are implemented, using Claude Code (`/plan-feature`, then `/implement-step`). See [docs/plans/README.md](docs/plans/README.md) for the workflow.
