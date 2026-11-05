@@ -20,6 +20,8 @@ participants:
   - <full name of each speaker found in the transcript, one per line>
 project: "<one of: {PROJECT_NAMES} — or Unknown if none match>"
 summary: "<1-2 sentence summary of the core topic and key outcome>"
+status: "done"
+aliases: []
 extra_tags:
   - <2-4 lowercase tags derived from transcript content only, no project or standard tags>
 ---
