@@ -3,7 +3,13 @@
 Status: draft
 
 Planned against: commit `1fc581b`
-Depends on: none (but `04-moc-property` also edits `projects.toml` and project handling — implement 04 first, or re-check 04 afterwards)
+Depends on: `08-project-context` — implement 08 first, then revise this plan (see "Revision needed after 08"). (`04-moc-property` is done.)
+
+## Revision needed after 08
+`08-project-context` adds a separate classification call (`identify_project()`, prompt in `prompts/identify_project.md`) that decides the project — and with it `MOC:` and tags — **whenever any project has a `context` file**. That changes this plan:
+- The descriptions belong in the classifier prompt (`identify_project.md`, rendered via 08's `_project_names()` helper or a new `{PROJECT_LIST}` placeholder there), not in the note templates. Open question 1 below (placeholder in `templates/*.md`) then mostly disappears — no template change, `TEMPLATE_MARKERS` untouched.
+- New open question: the classifier only runs when some project has context. Should it also run when any project has a `description` (recommended: yes — "run the classifier if any project has context or a description"), or should descriptions additionally go into the templates for the no-classifier case?
+- Re-check `_load_projects()`, `build_messages()` and the `Content` dataclass against the code after 08 before finalizing the steps.
 
 ## Resume here
 This plan is a **draft**: resolve the open questions in a short planning session (`/plan-feature` or Plan Mode, referring to this file), set Status to `ready`, then:

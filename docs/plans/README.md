@@ -19,7 +19,10 @@ Update this table when a plan is added or its status changes. To continue with a
 | [02-content-files](02-content-files.md) — templates, projects, tags | done | 01 |
 | [03-transcript-formats](03-transcript-formats.md) | done | – |
 | [04-moc-property](04-moc-property.md) | done | – |
-| [05-project-descriptions](05-project-descriptions.md) | draft | – (implement after 04) |
+| [05-project-descriptions](05-project-descriptions.md) | draft | 08 (revise this plan after 08 — descriptions go into the classifier prompt) |
+| [06-ai-call-resilience](06-ai-call-resilience.md) — timeout, retries, failure notification | ready | – (also covers 08's classifier call via `call_ai()`) |
+| [07-watch-folder-config](07-watch-folder-config.md) — `[watch] folder` in config.toml, `--dry-run` | ready | – (re-check `main()` if 06 is done first; dry-run must not trigger 08's classifier) |
+| [08-project-context](08-project-context.md) — context files per project, classification call before the note | done | – (interacts with 06/07, see plan) |
 
 ## Workflow
 
