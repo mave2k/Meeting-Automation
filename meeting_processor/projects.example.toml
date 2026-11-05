@@ -15,6 +15,11 @@ default_tags = ["meeting", "transcript"]
 #   wikilink = exact name of an existing MOC note; written to the note as MOC: "[[...]]".
 #              Not checked against the vault — a typo gives a broken link.
 #   tags     = fixed tags added when this project is matched
+#   context  = optional list of Markdown files in project_context/ (next to this
+#              file; git-ignored) with background on the project: people and roles,
+#              name spellings, terms, goals. Example:
+#                context = ["halvorsen_context.md"]
+#              Several projects may share a file; a project may list several files.
 
 # ── A client ──────────────────────────────────────────
 [projects.Halvorsen]

@@ -95,6 +95,52 @@ Rules for templates (checked on every run — a broken template stops the run wi
 
 ---
 
+## Project Context
+
+You can give the AI background knowledge about a project — who is who, how names are spelled, what the abbreviations mean — so that notes of that project's meetings get names, roles and terms right.
+
+**Setup**
+1. Create the folder `meeting_processor/project_context/` (next to `projects.toml`). It is ignored by git, because context files usually contain real client information.
+2. Write one or more Markdown files there, e.g. `project_context/halvorsen_context.md`.
+3. List them in the project's table in `projects.toml`:
+   ```toml
+   [projects.Halvorsen]
+   wikilink = "Halvorsen MOC"
+   tags     = ["halvorsen"]
+   context  = ["halvorsen_context.md"]
+
+   # Several projects may share a file, and a project may list several files
+   [projects.Clarion]
+   wikilink = "Medivia MOC"
+   tags     = ["medivia", "clarion", "vantix"]
+   context  = ["medivia_programme.md", "clarion_team.md"]
+   ```
+   `context` is optional; `context = []` means no context. Sub-folders inside `project_context/` are fine (`["medivia/team.md"]`); files outside it are not allowed.
+
+**What makes a good context file** — short and factual. Keep it to what helps the AI understand and spell the meeting correctly:
+- People and their roles (client side and your side)
+- Correct spellings of names, companies, systems and products
+- Glossary: abbreviations and internal terms ("second plant" = plant Bergen)
+- Project goals and the current phase
+
+Leave out meeting history and past decisions — the AI is told the context is background and must not report it as discussed or decided, but the less there is to confuse with the meeting, the better. Example:
+```markdown
+# Halvorsen rollout
+- Halvorsen project lead: Dr. Ingrid Solberg (client side)
+- Anna Weber: our project manager; James Okafor: our technical lead
+- "Second plant" = plant Bergen, go-live August 2026
+```
+
+**How it works** — as soon as at least one project has `context`, every meeting is processed in two AI calls:
+1. **Project identification** — a short call sends the transcript with the project list (`prompts/identify_project.md`) and asks which project it belongs to. The log shows the answer: `Project identified: Halvorsen (context: halvorsen_context.md, 4,213 chars)`, or `(no context)` for a project without context files and for `Unknown`.
+2. **Note** — the normal call with the note template; if the identified project has context files, their text is sent along with the transcript, clearly marked as background.
+
+The identified project is the one that counts: it decides the note's `MOC:` link and project tags, so a note is never filed under one project but written with another project's background. If the note call names a different project, the log says `Note call answered project '…' — using identified project '…'`.
+
+**Cost** — the transcript is sent twice, so each meeting costs roughly one extra transcript's worth of input tokens and takes about 5–15 seconds longer. Without any `context` in `projects.toml` there is only one call, exactly as before.
+
+---
+
 ## Setup
 
 ### 1. Get the code and create the watch folder
@@ -196,6 +242,8 @@ The AI picks the project name from these keys based on the transcript content (`
 - `wikilink` is **not** checked against your vault. A typo gives a broken (greyed-out) link — fix the name in `projects.toml`.
 
 The AI also generates 2–4 additional content-specific tags automatically. Project tags, `default_tags`, the template name and the AI tags are merged and deduplicated before writing to Obsidian.
+
+**Project context (optional)** — a project can list Markdown files with background knowledge (`context = ["halvorsen_context.md"]`) that are sent to the AI with that project's meetings. See [Project Context](#project-context).
 
 **Note templates** — the note format is defined by the Markdown files in `templates/`; `summary` is used by default. See [Note Templates](#note-templates) to change the layout or add a new note type.
 
@@ -304,12 +352,21 @@ All logs are written relative to the script location in `logs/`:
 | `Config error: Invalid template filename '…'` | Rename the file in `templates/` to lowercase letters, digits, `-` or `_` only (e.g. `My Template.md` → `my-template.md`) |
 | `Config error: No templates found` | `templates/` is missing or empty — restore it with `git checkout -- templates/` |
 | `Config error: projects.toml …` | The message names the problem: file missing (copy `projects.example.toml` to `projects.toml`), invalid TOML, a project without `wikilink` or `tags`, a project named `Unknown` (reserved), or two projects that differ only in case (`Halvorsen` / `halvorsen`) |
+| `Config error: projects.toml: [projects.…] context must be a list of .md filenames` | Write `context` as a list in square brackets, even for one file: `context = ["x_context.md"]`, not `context = "x_context.md"` |
+| `Config error: [projects.…] context file '…' must be a .md file` | Context files must be Markdown — rename the file (and the entry) to end in `.md` |
+| `Config error: [projects.…] context file '…' must be inside project_context/` | The entry contains `..` or an absolute path — move the file into `project_context/` and list it by its name (or `subfolder/name.md`) |
+| `Config error: [projects.…] context file '…' not found in project_context/` | Check the spelling of the file name in `projects.toml` against the file in `project_context/` |
+| `Config error: project_context/ not found` | A project has `context` but the folder doesn't exist — create `meeting_processor/project_context/` next to `projects.toml` |
+| `Config error: [projects.…] context file '…' is empty` | Write some content into the file, or remove it from `context` |
+| `Config error: [projects.…] context file '…' is not valid UTF-8` | Re-save the file as UTF-8 in your editor |
+| `Config error: prompts/identify_project.md …` | The project identification prompt is missing or lost its `{PROJECT_NAMES}` marker — restore it with `git checkout -- prompts/identify_project.md` |
+| Wrong project identified / wrong `MOC` with context configured | The log line `Project identified: …` shows the identification call's answer (it decides the MOC, not the note call). `Classifier answer '…' matches no project` means the AI answered a name that isn't in `projects.toml`. Make the project key closer to how the project is named in meetings |
 | AI call fails with 401 / invalid API key | The key in the selected provider's section of `config.toml` is wrong or was rotated |
 | Nothing happens after export | Finder → right-click watch folder → Services → Folder Actions Setup → confirm action is checked |
 | `ModuleNotFoundError` | Confirm the venv is activated; re-run `pip install -r requirements.txt` |
 | Obsidian write fails (401) | `[obsidian] api_key` in `config.toml` is wrong — copy it again from Obsidian → Settings → Local REST API |
 | Obsidian write fails (404) | `[obsidian] folder` in `config.toml` does not exist in your vault — create it first |
-| `MOC` is empty (`MOC: ""`) | The AI answered `Unknown` or a name that isn't in `projects.toml` — the log line `Project unresolved: '…'` shows its answer. The project name in `projects.toml` must loosely match how the project is mentioned in the transcript; adjust the key name or add the project |
+| `MOC` is empty (`MOC: ""`) | The AI answered `Unknown` or a name that isn't in `projects.toml` — the log line `Project unresolved: '…'` shows its answer (with project context configured: the `Project identified: …` line). The project name in `projects.toml` must loosely match how the project is mentioned in the transcript; adjust the key name or add the project |
 | `MOC` link is greyed out / "create note" in Obsidian | The `wikilink` in `projects.toml` doesn't match an existing note exactly (it is not checked against the vault) — fix the spelling |
 | Wrong or missing title | Check `logs/meeting_processor.log` for the extracted H1 value; the AI may have omitted the heading |
 | Date is today instead of meeting date | The file has no date metadata (MacWhisper bare-array JSON, all `.vtt`/`.srt`/`.txt`) and no `YYYY-MM-DD` in its filename, so the file modification time was used — put the date in the filename |
@@ -347,9 +404,12 @@ Meeting Automation/
     ├── config.example.toml    ← template for config.toml (in git)
     ├── projects.toml          ← your projects (MOC wikilink + tags) and default tags (not in git)
     ├── projects.example.toml  ← template for projects.toml with made-up projects (in git)
+    ├── project_context/       ← optional background files per project (not in git)
     ├── templates/             ← note templates (prompt + layout), one .md per note type
     │   ├── summary.md
     │   └── mom.md
+    ├── prompts/
+    │   └── identify_project.md ← prompt for the project identification call
     ├── pyproject.toml         ← packaging + `meeting-processor` entry point
     ├── src/meeting_processor/
     │   ├── processor.py       ← main code (config + content loading, pipeline, main())

@@ -53,6 +53,9 @@ PROCESSED_LOG = LOG_DIR / "meeting_processor_processed.txt"
 CONFIG_FILE = PROJECT_DIR / "config.toml"
 PROJECTS_FILE = PROJECT_DIR / "projects.toml"
 TEMPLATES_DIR = PROJECT_DIR / "templates"
+PROJECT_CONTEXT_DIR = PROJECT_DIR / "project_context"  # git-ignored; files named in projects.toml context
+PROMPTS_DIR = PROJECT_DIR / "prompts"  # internal prompts (not note templates)
+IDENTIFY_PROMPT_FILE = PROMPTS_DIR / "identify_project.md"
 
 # NOTE: WATCH_FOLDER is only needed for launchd Mode B (no-argument scan).
 WATCH_FOLDER = PROJECT_DIR.parent / "MacWhisper-Exports"
@@ -157,9 +160,11 @@ RESERVED_PROJECT = "Unknown"  # appended to {PROJECT_NAMES} by build_messages()
 
 @dataclass(frozen=True)
 class Content:
-    projects: dict        # name → {"wikilink": str, "tags": [str, ...]}
+    projects: dict        # name → {"wikilink": str, "tags": [str, ...], optional "context": [str, ...]}
     default_tags: list[str]
     templates: dict[str, str]  # template name (file stem) → prompt text
+    project_context: dict[str, str]  # project name → combined context text (only projects with context)
+    identify_prompt: str  # system prompt of the classification call (contains {PROJECT_NAMES})
 
 
 def _is_str_list(value) -> bool:
@@ -203,8 +208,59 @@ def _load_projects(path: Path) -> tuple[dict, list[str]]:
             raise ConfigError(f'{name}: [projects.{project}] wikilink is missing or empty')
         if not _is_str_list(entry.get("tags")):
             raise ConfigError(f'{name}: [projects.{project}] tags must be a list of strings, e.g. ["{project.lower()}"]')
+        if "context" in entry and not _is_str_list(entry["context"]):
+            raise ConfigError(
+                f'{name}: [projects.{project}] context must be a list of .md filenames, '
+                f'e.g. ["{project.lower()}_context.md"]'
+            )
 
     return projects, default_tags
+
+
+def _load_project_context(projects: dict, context_dir: Path) -> dict[str, str]:
+    """Return project name → combined context text, for projects with a non-empty context list.
+
+    Files are read from context_dir (sub-folders allowed, nothing outside it) and
+    joined in the listed order, each preceded by a "[File: <name>]" line.
+    """
+    folder = f"{context_dir.name}/"
+    root = context_dir.resolve()
+    result: dict[str, str] = {}
+    for project, entry in projects.items():
+        files = entry.get("context") or []
+        if not files:
+            continue
+        if not context_dir.is_dir():
+            raise ConfigError(f"{folder} not found — create it next to projects.toml")
+        parts = []
+        for file in files:
+            where = f"[projects.{project}] context file '{file}'"
+            if not file.lower().endswith(".md"):
+                raise ConfigError(f"{where} must be a .md file")
+            path = (context_dir / file).resolve()
+            if not path.is_relative_to(root):
+                raise ConfigError(f"{where} must be inside {folder}")
+            if not path.is_file():
+                raise ConfigError(f"{where} not found in {folder}")
+            try:
+                text = path.read_text(encoding="utf-8-sig")
+            except UnicodeDecodeError:
+                raise ConfigError(f"{where} is not valid UTF-8 — save it as UTF-8") from None
+            if not text.strip():
+                raise ConfigError(f"{where} is empty")
+            parts.append(f"[File: {file}]\n{text.strip()}")
+        result[project] = "\n\n".join(parts)
+    return result
+
+
+def _load_identify_prompt(path: Path) -> str:
+    where = f"{path.parent.name}/{path.name}"
+    if not path.is_file():
+        raise ConfigError(f"{where} not found — it is part of the repository, restore it")
+    text = path.read_text(encoding="utf-8")
+    if "{PROJECT_NAMES}" not in text:
+        raise ConfigError(f"{where} is missing the required marker {{PROJECT_NAMES}}")
+    return text
 
 
 def _load_templates(templates_dir: Path) -> dict[str, str]:
@@ -232,16 +288,27 @@ def load_content(
     config: Config,
     projects_file: Path = PROJECTS_FILE,
     templates_dir: Path = TEMPLATES_DIR,
+    context_dir: Path = PROJECT_CONTEXT_DIR,
+    identify_prompt_file: Path = IDENTIFY_PROMPT_FILE,
 ) -> Content:
-    """Read and validate projects.toml and templates/*.md. Raises ConfigError."""
+    """Read and validate projects.toml, project_context/ files, templates/*.md and
+    prompts/identify_project.md. Raises ConfigError."""
     projects, default_tags = _load_projects(projects_file)
+    project_context = _load_project_context(projects, context_dir)
     templates = _load_templates(templates_dir)
+    identify_prompt = _load_identify_prompt(identify_prompt_file)
     if config.template not in templates:
         raise ConfigError(
             f"Template '{config.template}' not found in {templates_dir.name}/ — "
             f"available: {', '.join(templates)}"
         )
-    return Content(projects=projects, default_tags=default_tags, templates=templates)
+    return Content(
+        projects=projects,
+        default_tags=default_tags,
+        templates=templates,
+        project_context=project_context,
+        identify_prompt=identify_prompt,
+    )
 
 # ══════════════════════════════════════════════════════
 # HELPERS
@@ -272,7 +339,52 @@ def mark_processed(filepath: Path) -> None:
         f.write(str(filepath) + "\n")
 
 
-def build_messages(parsed: dict, config: Config, content: Content, template: str) -> tuple[str, str]:
+def _project_names(content: Content) -> str:
+    """Project keys from projects.toml + "Unknown", as offered to the AI in {PROJECT_NAMES}."""
+    return ", ".join([*content.projects, RESERVED_PROJECT])
+
+
+def _lookup_project(answer: str, content: Content) -> str | None:
+    """Match an AI project answer case-insensitively and whitespace-trimmed.
+
+    Returns the key as written in projects.toml, or None ("Unknown", empty, unmatched).
+    """
+    by_lower = {name.strip().lower(): name for name in content.projects}
+    return by_lower.get(answer.strip().lower())
+
+
+# Precedes the project context files in the note call's user message
+PROJECT_CONTEXT_HEADER = (
+    "Project background — reference material for this project, NOT part of the meeting. "
+    "Use it to understand names, roles, terms and goals, and to spell them correctly. "
+    "Do not report anything from it as discussed, decided or assigned in this meeting."
+)
+
+
+def _user_message(parsed: dict, context: str | None = None) -> str:
+    """User message shared by the classification call and the note call.
+
+    With context, a clearly delimited project background block goes between
+    the date and the transcript.
+    """
+    background = ""
+    if context:
+        background = (
+            f"{PROJECT_CONTEXT_HEADER}\n"
+            f"--- begin project background ---\n"
+            f"{context}\n"
+            f"--- end project background ---\n\n"
+        )
+    return (
+        f"Meeting date: {parsed['date_display']}\n\n"
+        f"{background}"
+        f"Transcript:\n{parsed['transcript']}"
+    )
+
+
+def build_messages(
+    parsed: dict, config: Config, content: Content, template: str, project: str | None = None
+) -> tuple[str, str]:
     """Return (system_prompt, user_message) with all placeholders injected.
 
     Args:
@@ -280,6 +392,8 @@ def build_messages(parsed: dict, config: Config, content: Content, template: str
         config:   Loaded config.toml (provider + model give the AI name).
         content:  Loaded projects.toml + templates.
         template: Template name (see select_template()).
+        project:  Project from identify_project(), or None. If it has context
+                  files, their text is added to the user message.
 
     Placeholders in templates/*.md:
         {DATE}          → meeting date
@@ -290,22 +404,16 @@ def build_messages(parsed: dict, config: Config, content: Content, template: str
     provider_label = {"gemini": "Gemini", "claude": "Claude", "openai": "OpenAI"}
     ai_name = f"{provider_label[config.provider]} ({config.model})"
 
-    project_names = ", ".join([*content.projects, RESERVED_PROJECT])
-
     prompt_template = content.templates[template]
     system = (
         prompt_template
         .replace("{DATE}", parsed["date_display"])
         .replace("{AI_NAME}", ai_name)
-        .replace("{PROJECT_NAMES}", project_names)
+        .replace("{PROJECT_NAMES}", _project_names(content))
     )
 
-    user = (
-        f"Meeting date: {parsed['date_display']}\n\n"
-        f"Transcript:\n{parsed['transcript']}"
-    )
-
-    return system, user
+    context = content.project_context.get(project) if project else None
+    return system, _user_message(parsed, context)
 
 
 def call_ai(system_prompt: str, user_message: str, config: Config) -> str:
@@ -350,6 +458,26 @@ def call_ai(system_prompt: str, user_message: str, config: Config) -> str:
         raise ValueError(f"Unknown AI provider: {config.provider}")
 
 
+def identify_project(parsed: dict, config: Config, content: Content) -> str:
+    """Classification call: ask the AI which project the meeting belongs to.
+
+    Returns the project key as written in projects.toml, or RESERVED_PROJECT
+    ("Unknown") if the AI answered Unknown or a name that matches no project.
+    """
+    system = content.identify_prompt.replace("{PROJECT_NAMES}", _project_names(content))
+    response = call_ai(system, _user_message(parsed), config)
+
+    first_line = next((line for line in response.splitlines() if line.strip()), "")
+    answer = first_line.strip().strip("\"'`*.").strip()
+
+    project = _lookup_project(answer, content)
+    if project:
+        return project
+    if answer.lower() != RESERVED_PROJECT.lower():
+        log.warning(f"  Classifier answer '{answer}' matches no project — using {RESERVED_PROJECT}")
+    return RESERVED_PROJECT
+
+
 def extract_title_from_h1(markdown: str) -> str:
     """Extract the first # H1 heading; fall back to timestamped default."""
     match = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)
@@ -372,21 +500,29 @@ def inject_title(markdown: str, title: str) -> str:
 
 
 def resolve_project_and_tags(
-    markdown: str, content: Content, extra_fixed_tags: list[str] | None = None
+    markdown: str,
+    content: Content,
+    extra_fixed_tags: list[str] | None = None,
+    project: str | None = None,
 ) -> str:
     """
     Reads the AI-generated project name and extra_tags from the frontmatter,
     replaces them with a MOC: link and a merged, deduplicated tag list.
 
-    The AI's project answer is matched against projects.toml case-insensitively
-    and whitespace-trimmed. "Unknown", empty or unmatched → MOC: "" and no project
-    tags — never a link to a name that isn't configured. The MOC note itself is not
-    checked against the vault (projects.toml is the source of truth).
+    Without `project`, the note call's project answer decides: it is matched against
+    projects.toml case-insensitively and whitespace-trimmed. "Unknown", empty or
+    unmatched → MOC: "" and no project tags — never a link to a name that isn't
+    configured. The MOC note itself is not checked against the vault (projects.toml
+    is the source of truth).
+
+    With `project` (from identify_project()), that project decides; the note call's
+    answer is only compared against it and a disagreement is logged.
 
     Args:
         markdown:         The AI-generated markdown string.
         content:          Loaded projects.toml (projects + default tags).
         extra_fixed_tags: Additional tags to inject (the template name, e.g. ["summary"]).
+        project:          Identified project key or RESERVED_PROJECT, or None.
 
     Input frontmatter (AI-generated):
         project: "acme "
@@ -410,15 +546,25 @@ def resolve_project_and_tags(
     project_answer = project_match.group(1).strip() if project_match else RESERVED_PROJECT
 
     # ── Look up MOC link and fixed tags (case-insensitive) ─
-    by_lower = {name.strip().lower(): name for name in content.projects}
-    project_key = by_lower.get(project_answer.lower())
+    answer_key = _lookup_project(project_answer, content)
+    if project is None:
+        project_key = answer_key
+        source = f"'{project_answer}' → "
+    else:
+        if (answer_key or RESERVED_PROJECT) != project:
+            log.info(
+                f"  Note call answered project '{project_answer}' — "
+                f"using identified project '{project}'"
+            )
+        project_key = None if project == RESERVED_PROJECT else project
+        source = "identified → "
     project_data = content.projects[project_key] if project_key else {}
     wikilink = project_data.get("wikilink", "")
     project_tags = project_data.get("tags", [])
     if project_key:
-        log.info(f"  Project resolved: '{project_answer}' → '{project_key}' → MOC: '{wikilink}'")
+        log.info(f"  Project resolved: {source}'{project_key}' → MOC: '{wikilink}'")
     else:
-        log.info(f"  Project unresolved: '{project_answer}' → MOC: ''")
+        log.info(f"  Project unresolved: {source}'{RESERVED_PROJECT if project else project_answer}' → MOC: ''")
 
     # ── Extract AI-generated extra_tags ───────────────
     extra_tags_match = re.search(
@@ -501,7 +647,20 @@ def process_meeting(transcript_file: Path, config: Config, content: Content) -> 
         f"Transcript length: {len(parsed['transcript'])} chars"
     )
 
-    system_prompt, user_message = build_messages(parsed, config, content, template)
+    # Classification call only when at least one project has context files.
+    # Must stay inside process_meeting() (a dry run never reaches it).
+    project = None
+    if content.project_context:
+        log.info(f"  Identifying project via {config.provider} ({config.model})...")
+        project = identify_project(parsed, config, content)
+        if project in content.project_context:
+            files = ", ".join(content.projects[project]["context"])
+            chars = len(content.project_context[project])
+            log.info(f"  Project identified: {project} (context: {files}, {chars:,} chars)")
+        else:
+            log.info(f"  Project identified: {project} (no context)")
+
+    system_prompt, user_message = build_messages(parsed, config, content, template, project)
 
     log.info(f"  Sending to {config.provider} ({config.model}) [template: {template}]...")
     markdown = call_ai(system_prompt, user_message, config)
@@ -513,7 +672,9 @@ def process_meeting(transcript_file: Path, config: Config, content: Content) -> 
     markdown = inject_title(markdown, title)
 
     # The template name is always added as a fixed tag
-    markdown = resolve_project_and_tags(markdown, content, extra_fixed_tags=[template])
+    markdown = resolve_project_and_tags(
+        markdown, content, extra_fixed_tags=[template], project=project
+    )
 
     filename = f"{sanitize_filename(title)}.md"
 

@@ -31,3 +31,6 @@ examples/
 
 # Local projects with real client names — never commit (template: projects.example.toml)
 meeting_processor/projects.toml
+
+# Project context files with real client information — never commit
+meeting_processor/project_context/
